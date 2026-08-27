@@ -1,0 +1,59 @@
+# Python / Environment
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook / Data Science
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+.virtual_documents/
+
+# Datasets & Large Data Files (Keep structure, ignore raw/processed binaries)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# PyTorch Model Checkpoints & Output Weights
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.onnx
+models/checkpoints/*
+!models/checkpoints/.gitkeep
+
+# Training Logs & TensorBoard
+logs/
+runs/
+wandb/
+*.log
+
+# IDE & OS Specific
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
