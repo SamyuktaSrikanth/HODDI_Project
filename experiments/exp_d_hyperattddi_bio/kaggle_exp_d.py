@@ -1,0 +1,701 @@
+import os
+import ast
+import math
+import argparse
+import random
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch_geometric.nn as hnn
+from sklearn.metrics import (
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    average_precision_score,
+)
+
+def set_random_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_uniform_(m.weight)
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
+
+class HyperAttDDI_Bio(nn.Module):
+    """
+    HyperAttDDI with Multimodal Biological Feature Attention Fusion + SE Conditioning (Exp D).
+    
+    Architecture:
+    - Module 1 (Multimodal Drug Encoder):
+        - SMILES Encoder: ChemBERTa (768) -> Linear(768->256) -> ReLU -> Dropout
+        - Bio Encoder: Targets/Enzymes/Transporters/ATC (1024) -> Linear(1024->128) -> ReLU -> Dropout
+        - Bio Projection: Linear(128->256)
+        - Attention Fusion: Dynamically weights SMILES vs Bio modalities per drug -> 256d
+    - Module 2 (Hypergraph Encoder): 2-layer PyG HypergraphConv(256, 64, heads=4, use_attention=True)
+    - Module 4 (SE Encoder): SapBERT (768) -> Linear(768->256) -> ReLU -> Dropout
+    - Module 3 (SE-Conditioned Attention Pooling):
+        q = W_q(cat([h_e_mean, h_se]))  # SE conditions the query (512 -> d)
+        k_i = W_k(h_i)                   # (256 -> d)
+        alpha = softmax(q @ k.T / sqrt(d)) (masked by hyperedge membership)
+        h_combo = alpha @ W_v(h_i)
+    - Module 5 (Decoder):
+        z = cat([h_combo, h_se])         # (512d)
+        logits = Linear(512->128) -> ReLU -> Dropout -> Linear(128->1)
+    """
+    def __init__(self, smiles_dim=768, bio_dim=1024, emb_dim=256, bio_emb_dim=128, conv_dim=64, heads=4, d=64, p=0.1):
+        super().__init__()
+        self.d = d
+        self.p = p
+        
+        # Module 1: Multimodal Drug Encoder with Attention Fusion
+        self.smiles_encoder = nn.Sequential(
+            nn.Linear(smiles_dim, emb_dim),
+            nn.ReLU(),
+            nn.Dropout(p=p)
+        )
+        self.bio_encoder = nn.Sequential(
+            nn.Linear(bio_dim, bio_emb_dim),
+            nn.ReLU(),
+            nn.Dropout(p=p)
+        )
+        self.bio_proj = nn.Linear(bio_emb_dim, emb_dim)
+        
+        self.fusion_attn = nn.Sequential(
+            nn.Linear(emb_dim, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+        self.drug_norm = nn.LayerNorm(emb_dim)
+        
+        # Module 2: Hypergraph Encoder (2 layers, 64 * 4 = 256)
+        self.conv1 = hnn.HypergraphConv(emb_dim, conv_dim, heads=heads, use_attention=True, dropout=p)
+        self.conv2 = hnn.HypergraphConv(conv_dim * heads, conv_dim, heads=heads, use_attention=True, dropout=p)
+        
+        # Module 4: Side-Effect Encoder (SapBERT projection)
+        self.se_encoder = nn.Sequential(
+            nn.Linear(smiles_dim, emb_dim),
+            nn.ReLU(),
+            nn.Dropout(p=p)
+        )
+        
+        # Module 3: SE-Conditioned Attention Pooling
+        self.W_q = nn.Linear(emb_dim * 2, d)  # [h_e_mean || h_se]
+        self.W_k = nn.Linear(emb_dim, d)
+        self.W_v = nn.Linear(emb_dim, emb_dim)
+        
+        # Module 5: Interaction Decoder
+        self.decoder = nn.Sequential(
+            nn.Linear(emb_dim * 2, 128),  # [h_combo || h_se]
+            nn.ReLU(),
+            nn.Dropout(p=p),
+            nn.Linear(128, 1)
+        )
+        
+    def encode_drugs(self, smiles_features, bio_features):
+        h_s = self.smiles_encoder(smiles_features) # (N, 256)
+        h_b = self.bio_encoder(bio_features)       # (N, 128)
+        h_b_p = self.bio_proj(h_b)                 # (N, 256)
+        
+        stacked = torch.stack([h_s, h_b_p], dim=1) # (N, 2, 256)
+        scores = self.fusion_attn(stacked)         # (N, 2, 1)
+        weights = F.softmax(scores, dim=1)         # (N, 2, 1)
+        fused = (stacked * weights).sum(dim=1)     # (N, 256)
+        X = self.drug_norm(h_s + fused)            # (N, 256)
+        return X, weights
+        
+    def forward(self, smiles_features, bio_features, inc_matrix, se_features, return_attention=False):
+        """
+        smiles_features: (num_drugs, 768)
+        bio_features: (num_drugs, 1024)
+        inc_matrix: (num_drugs, batch_hyperedges)
+        se_features: (batch_hyperedges, 768)
+        """
+        N, E = inc_matrix.shape
+        H_T = inc_matrix.T  # (E, N)
+        
+        # 1. Multimodal Drug Encoding & Attention Fusion
+        X, modality_weights = self.encode_drugs(smiles_features, bio_features)  # (N, 256)
+        
+        # 2. Hypergraph Message Passing
+        row, col = torch.where(H_T)
+        edges = torch.cat([col.view(1, -1), row.view(1, -1)], dim=0).to(smiles_features.device)
+        degree_e = H_T.sum(dim=1, keepdim=True).clamp(min=1)
+        
+        attr1 = (H_T @ X) / degree_e
+        X1 = F.relu(self.conv1(X, edges, hyperedge_attr=attr1))
+        X1 = F.dropout(X1, p=self.p, training=self.training)
+        
+        attr2 = (H_T @ X1) / degree_e
+        X2 = F.relu(self.conv2(X1, edges, hyperedge_attr=attr2))
+        X2 = F.dropout(X2, p=self.p, training=self.training)
+        
+        # 4. Side Effect Encoding
+        h_se = self.se_encoder(se_features)  # (E, 256)
+        
+        # 3. SE-Conditioned Attention Pooling
+        h_e_mean = (H_T @ X2) / degree_e
+        q = self.W_q(torch.cat([h_e_mean, h_se], dim=1))  # (E, d)
+        k = self.W_k(X2)                                  # (N, d)
+        v = self.W_v(X2)                                  # (N, 256)
+        
+        scores = torch.matmul(q, k.T) / math.sqrt(self.d)
+        scores = scores.masked_fill(H_T == 0, -1e9)
+        alpha = F.softmax(scores, dim=1)
+        h_combo = torch.matmul(alpha, v)  # (E, 256)
+        
+        # 5. Decoder
+        z = torch.cat([h_combo, h_se], dim=1)
+        logits = self.decoder(z).squeeze(-1)
+        
+        if return_attention:
+            return logits, alpha, modality_weights
+        return logits
+
+def find_dataset_path():
+    if os.path.exists('/kaggle/input'):
+        for root, dirs, files in os.walk('/kaggle/input'):
+            if 'drug_embeddings_768d.pt' in files:
+                return root
+    candidates = ['data', '../data', '../../data', 'dataset', '../dataset', '../../dataset']
+    for c in candidates:
+        if os.path.exists(c) and os.path.exists(os.path.join(c, 'drug_embeddings_768d.pt')):
+            return c
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return '.'
+
+def load_data(base_path, device):
+    if os.path.exists(os.path.join(base_path, 'evaluation_subset')):
+        dataset_base_dir = os.path.join(base_path, 'evaluation_subset', 'subset_drug2-8_SE5-50', '')
+    elif os.path.exists(os.path.join(base_path, 'subset_drug2-8_SE5-50')):
+        dataset_base_dir = os.path.join(base_path, 'subset_drug2-8_SE5-50', '')
+    else:
+        dataset_base_dir = os.path.join(base_path, 'dataset', 'evaluation_subset', 'subset_drug2-8_SE5-50', '')
+
+    training_sub_ds_names = ['2015Q1', '2015Q2', '2015Q3', '2016Q4', '2017Q1', '2017Q2', '2017Q3', '2017Q4', '2018Q3', '2019Q1', '2019Q2', '2019Q3', '2019Q4', '2020Q1', '2020Q2', '2020Q3', '2020Q4', '2021Q1', '2021Q3', '2021Q4', '2022Q1', '2022Q2', '2022Q3', '2022Q4', '2023Q1', '2023Q2', '2023Q3', '2023Q4', '2024Q2']
+    validating_sub_ds_names = ['2014Q3', '2015Q4', '2016Q1', '2016Q3', '2021Q2', '2024Q1']
+    testing_sub_ds_names = ['2014Q4', '2016Q2', '2018Q1', '2018Q2', '2018Q4', '2024Q3']
+    
+    # 1. Drug SMILES Embeddings
+    emb_candidates = [
+        os.path.join(base_path, "drug_embeddings_768d.pt"),
+        os.path.join(base_path, "dataset", "drug_embeddings_768d.pt"),
+        "dataset/drug_embeddings_768d.pt"
+    ]
+    emb_path = None
+    for cand in emb_candidates:
+        if os.path.exists(cand):
+            emb_path = cand
+            break
+    if emb_path is None:
+        raise FileNotFoundError(f"Missing embeddings file: checked {emb_candidates}")
+    
+    print(f"Loading SMILES embeddings from: {emb_path}")
+    drug_embeddings_dict = torch.load(emb_path, map_location='cpu', weights_only=True)
+    
+    # 2. Side Effect Embeddings (SapBERT 768d)
+    se_file_candidates = [
+        os.path.join(base_path, 'dictionary', 'Side_effects_unique.csv'),
+        os.path.join(base_path, 'dataset', 'dictionary', 'Side_effects_unique.csv'),
+        'dataset/dictionary/Side_effects_unique.csv'
+    ]
+    se_file = None
+    for cand in se_file_candidates:
+        if os.path.exists(cand):
+            se_file = cand
+            break
+    if se_file is None:
+        raise FileNotFoundError(f"Missing Side_effects_unique.csv: checked {se_file_candidates}")
+        
+    print(f"Loading side-effect SapBERT embeddings from: {se_file}")
+    se_df = pd.read_csv(se_file)
+    feature_cols = [str(i) for i in range(768)]
+    se_embeddings_dict = {}
+    se_names_dict = {}
+    for _, row in se_df.iterrows():
+        cui = row['umls_cui_from_meddra']
+        se_embeddings_dict[cui] = row[feature_cols].values.astype(np.float32)
+        se_names_dict[cui] = str(row['side_effect_name'])
+        
+    # 3. Drug name mappings for visualization
+    drug_dict_candidates = [
+        os.path.join(base_path, 'dictionary', 'Drugbank_ID_SMILE_all_structure links.csv'),
+        os.path.join(base_path, 'dataset', 'dictionary', 'Drugbank_ID_SMILE_all_structure links.csv'),
+        'dataset/dictionary/Drugbank_ID_SMILE_all_structure links.csv'
+    ]
+    drug_names_dict = {}
+    for cand in drug_dict_candidates:
+        if os.path.exists(cand):
+            d_df = pd.read_csv(cand)
+            drug_names_dict = dict(zip(d_df['DrugBank ID'], d_df['Name']))
+            break
+            
+    def merge_sub_datasets(sub_datasets):
+        pos_merged = pd.DataFrame()
+        neg_merged = pd.DataFrame()
+        for sub_ds in sub_datasets:
+            pos_file = os.path.join(dataset_base_dir, f'{sub_ds}_positive_samples_condition123_SE_above_0.9.csv')
+            neg_file = os.path.join(dataset_base_dir, f'{sub_ds}_negative_samples_condition123_SE_above_0.9.csv')
+            if os.path.exists(pos_file):
+                pos_merged = pd.concat([pos_merged, pd.read_csv(pos_file)], axis=0)
+            if os.path.exists(neg_file):
+                neg_merged = pd.concat([neg_merged, pd.read_csv(neg_file)], axis=0)
+        return pos_merged, neg_merged
+
+    print("Loading quarterly CSV files...")
+    train_data_pos, train_data_neg = merge_sub_datasets(training_sub_ds_names)
+    val_data_pos, val_data_neg = merge_sub_datasets(validating_sub_ds_names)
+    test_data_pos, test_data_neg = merge_sub_datasets(testing_sub_ds_names)
+    
+    all_drugs = set()
+    for df in [train_data_pos, train_data_neg, val_data_pos, val_data_neg, test_data_pos, test_data_neg]:
+        for drug_list in df['DrugBankID']:
+            all_drugs.update([d for d in ast.literal_eval(drug_list) if d.lower() != 'none'])
+            
+    valid_drugs = sorted(list(d for d in all_drugs if d in drug_embeddings_dict))
+    drug_to_index = {drug: idx for idx, drug in enumerate(valid_drugs)}
+    num_drugs = len(valid_drugs)
+    print(f"Total valid unique drugs: {num_drugs}")
+
+    # 4. Biological Features Matrix (1024d)
+    bio_file_candidates = [
+        os.path.join(base_path, "bio_features_1024d.pt"),
+        os.path.join(base_path, "dataset", "bio_features_1024d.pt"),
+        "dataset/bio_features_1024d.pt"
+    ]
+    bio_file = None
+    for cand in bio_file_candidates:
+        if os.path.exists(cand):
+            bio_file = cand
+            break
+            
+    if bio_file and os.path.exists(bio_file):
+        print(f"Loading precomputed biological features from: {bio_file}")
+        bio_data = torch.load(bio_file, map_location='cpu', weights_only=True)
+        bio_tensor = bio_data['bio_tensor']
+    else:
+        # Build bio features on-the-fly from drugbank_clean.csv
+        print("Precomputed bio_features_1024d.pt not found. Generating from drugbank_clean.csv...")
+        clean_candidates = [
+            os.path.join(base_path, 'drugbank_clean.csv'),
+            os.path.join(base_path, '..', 'drugbank_clean.csv'),
+            '../drugbank_clean.csv',
+            'drugbank_clean.csv'
+        ]
+        clean_file = None
+        for cand in clean_candidates:
+            if os.path.exists(cand):
+                clean_file = cand
+                break
+        if not clean_file:
+            print("Warning: drugbank_clean.csv not found. Initializing zeros for bio features.")
+            bio_tensor = torch.zeros((num_drugs, 1024), dtype=torch.float32)
+        else:
+            df_clean = pd.read_csv(clean_file, low_memory=False).dropna(subset=['drugbank-id']).drop_duplicates(subset=['drugbank-id'])
+            clean_dict = df_clean.set_index('drugbank-id').to_dict(orient='index')
+            bio_tokens = {}
+            for d in valid_drugs:
+                if d in clean_dict:
+                    row = clean_dict[d]
+                    for col in ['targets', 'enzymes', 'transporters', 'carriers', 'pathways']:
+                        val = row.get(col)
+                        if pd.notna(val):
+                            for tok in str(val).split():
+                                bio_tokens[tok] = bio_tokens.get(tok, 0) + 1
+                    atc = row.get('atc-codes')
+                    if pd.notna(atc):
+                        for code in str(atc).split():
+                            if len(code) >= 3:
+                                tok = f'ATC_{code[:3]}'
+                                bio_tokens[tok] = bio_tokens.get(tok, 0) + 1
+            sorted_bio = sorted(bio_tokens.items(), key=lambda x: x[1], reverse=True)
+            top_1024 = [tok for tok, _ in sorted_bio[:1024]]
+            token_to_idx = {t: i for i, t in enumerate(top_1024)}
+            bio_mat = np.zeros((num_drugs, 1024), dtype=np.float32)
+            for i, d in enumerate(valid_drugs):
+                if d in clean_dict:
+                    row = clean_dict[d]
+                    for col in ['targets', 'enzymes', 'transporters', 'carriers', 'pathways']:
+                        val = row.get(col)
+                        if pd.notna(val):
+                            for tok in str(val).split():
+                                if tok in token_to_idx:
+                                    bio_mat[i, token_to_idx[tok]] = 1.0
+                    atc = row.get('atc-codes')
+                    if pd.notna(atc):
+                        for code in str(atc).split():
+                            if len(code) >= 3:
+                                tok = f'ATC_{code[:3]}'
+                                if tok in token_to_idx:
+                                    bio_mat[i, token_to_idx[tok]] = 1.0
+            bio_tensor = torch.tensor(bio_mat, dtype=torch.float32)
+
+    def build_incidence_and_se(pos_df, neg_df):
+        num_pos = len(pos_df)
+        num_neg = len(neg_df)
+        
+        inc_pos = np.zeros((num_drugs, num_pos), dtype=np.float32)
+        se_pos = np.zeros((num_pos, 768), dtype=np.float32)
+        pos_cuis = pos_df['SE_above_0.9'].values
+        pos_drug_lists = pos_df['DrugBankID'].values
+        
+        for col_idx in range(num_pos):
+            cui = pos_cuis[col_idx]
+            if cui in se_embeddings_dict:
+                se_pos[col_idx] = se_embeddings_dict[cui]
+            for drug_id in ast.literal_eval(pos_drug_lists[col_idx]):
+                if drug_id in drug_to_index:
+                    inc_pos[drug_to_index[drug_id], col_idx] = 1.0
+                    
+        inc_neg = np.zeros((num_drugs, num_neg), dtype=np.float32)
+        se_neg = np.zeros((num_neg, 768), dtype=np.float32)
+        neg_cuis = neg_df['SE_above_0.9'].values
+        neg_drug_lists = neg_df['DrugBankID'].values
+        
+        for col_idx in range(num_neg):
+            cui = neg_cuis[col_idx]
+            if cui in se_embeddings_dict:
+                se_neg[col_idx] = se_embeddings_dict[cui]
+            for drug_id in ast.literal_eval(neg_drug_lists[col_idx]):
+                if drug_id in drug_to_index:
+                    inc_neg[drug_to_index[drug_id], col_idx] = 1.0
+                    
+        labels_pos = np.ones(num_pos, dtype=np.float32)
+        labels_neg = np.zeros(num_neg, dtype=np.float32)
+        
+        return inc_pos, inc_neg, se_pos, se_neg, labels_pos, labels_neg
+
+    print("Building incidence matrices and SapBERT side-effect representations...")
+    train_inc_pos, train_inc_neg, train_se_pos, train_se_neg, train_lab_pos, train_lab_neg = build_incidence_and_se(train_data_pos, train_data_neg)
+    val_inc_pos, val_inc_neg, val_se_pos, val_se_neg, val_lab_pos, val_lab_neg = build_incidence_and_se(val_data_pos, val_data_neg)
+    test_inc_pos, test_inc_neg, test_se_pos, test_se_neg, test_lab_pos, test_lab_neg = build_incidence_and_se(test_data_pos, test_data_neg)
+    
+    smiles_feature = torch.zeros((num_drugs, 768), dtype=torch.float32)
+    for drug, idx in drug_to_index.items():
+        smiles_feature[idx] = drug_embeddings_dict[drug]
+        
+    train_inc = torch.tensor(np.concatenate([train_inc_pos, train_inc_neg], axis=1), dtype=torch.float32)
+    train_se = torch.tensor(np.concatenate([train_se_pos, train_se_neg], axis=0), dtype=torch.float32)
+    train_lab = torch.tensor(np.concatenate([train_lab_pos, train_lab_neg]), dtype=torch.float32)
+    
+    val_inc = torch.tensor(np.concatenate([val_inc_pos, val_inc_neg], axis=1), dtype=torch.float32)
+    val_se = torch.tensor(np.concatenate([val_se_pos, val_se_neg], axis=0), dtype=torch.float32)
+    val_lab = np.concatenate([val_lab_pos, val_lab_neg])
+    
+    test_inc = torch.tensor(np.concatenate([test_inc_pos, test_inc_neg], axis=1), dtype=torch.float32)
+    test_se = torch.tensor(np.concatenate([test_se_pos, test_se_neg], axis=0), dtype=torch.float32)
+    test_lab = np.concatenate([test_lab_pos, test_lab_neg])
+    
+    return {
+        'train_inc': train_inc,
+        'train_se': train_se,
+        'train_lab': train_lab,
+        'val_inc': val_inc,
+        'val_se': val_se,
+        'val_lab': val_lab,
+        'test_inc': test_inc,
+        'test_se': test_se,
+        'test_lab': test_lab,
+        'smiles_features': smiles_feature.to(device),
+        'bio_features': bio_tensor.to(device),
+        'num_drugs': num_drugs,
+        'drug_to_index': drug_to_index,
+        'valid_drugs': valid_drugs,
+        'se_embeddings_dict': se_embeddings_dict,
+        'se_names_dict': se_names_dict,
+        'drug_names_dict': drug_names_dict
+    }
+
+def evaluate_dataset(model, smiles_features, bio_features, inc_matrix, se_matrix, labels, device, batch_size=512):
+    model.eval()
+    all_scores = []
+    num_edges = inc_matrix.shape[1]
+    
+    with torch.no_grad():
+        for i in range(0, num_edges, batch_size):
+            batch_inc = inc_matrix[:, i:i+batch_size].to(device)
+            batch_se = se_matrix[i:i+batch_size].to(device)
+            logits = model(smiles_features, bio_features, batch_inc, batch_se)
+            probs = torch.sigmoid(logits).cpu().numpy()
+            all_scores.append(probs)
+            
+    all_scores = np.concatenate(all_scores, axis=0)
+    binary_preds = (all_scores >= 0.5).astype(int)
+    
+    pr = precision_score(labels, binary_preds, zero_division=0)
+    re = recall_score(labels, binary_preds, zero_division=0)
+    f1 = f1_score(labels, binary_preds, zero_division=0)
+    auc = roc_auc_score(labels, all_scores)
+    prauc = average_precision_score(labels, all_scores)
+    
+    return {
+        'precision': pr,
+        'recall': re,
+        'f1': f1,
+        'auc': auc,
+        'prauc': prauc,
+        'scores': all_scores
+    }
+
+def perform_attention_and_modality_visualization(model, smiles_features, bio_features, data, device, output_dir):
+    """
+    Evaluates multi-drug combinations across distinct side effects and inspects both:
+    1. Drug Attention Weights per side effect
+    2. Modality Fusion Weights (SMILES vs Bio) per drug
+    """
+    model.eval()
+    drug_to_index = data['drug_to_index']
+    se_embeddings_dict = data['se_embeddings_dict']
+    se_names_dict = data['se_names_dict']
+    drug_names_dict = data['drug_names_dict']
+    num_drugs = data['num_drugs']
+    
+    target_ses = [
+        ('C0741553', 'Hemorrhage / Bleeding'),
+        ('C0151746', 'Renal Failure / Kidney Injury'),
+        ('C0020649', 'Hypotension'),
+        ('C0018790', 'Cardiac Arrest')
+    ]
+    
+    sample_combos = [
+        {
+            'name': 'Cardiovascular Combo (Antiplatelet + Anticoagulant)',
+            'drug_ids': ['DB00758', 'DB14726', 'DB00945'], # Clopidogrel, Dabigatran, Acetylsalicylic acid
+        },
+        {
+            'name': 'CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid)',
+            'drug_ids': ['DB01175', 'DB00349', 'DB00230', 'DB00193'], # Escitalopram, Clobazam, Pregabalin, Tramadol
+        }
+    ]
+    
+    print("\n=======================================================")
+    print("      ATTENTION & MODALITY FUSION ANALYSIS (Exp D)     ")
+    print("=======================================================")
+    
+    # Check Modality Weights across all unique drugs in sample combos
+    with torch.no_grad():
+        _, _, mod_weights = model(smiles_features, bio_features, data['test_inc'][:, :2].to(device), data['test_se'][:2].to(device), return_attention=True)
+        mod_weights_np = mod_weights.squeeze(-1).cpu().numpy() # (N, 2)
+        
+    print("\n--- Modality Attention Fusion Weights per Drug ---")
+    print(f"{'Drug ID':<10} | {'Drug Name':<25} | {'SMILES Weight':<15} | {'Bio Weight':<15}")
+    print("-" * 72)
+    
+    checked_drugs = set()
+    for combo in sample_combos:
+        for d in combo['drug_ids']:
+            if d in drug_to_index and d not in checked_drugs:
+                idx = drug_to_index[d]
+                name = drug_names_dict.get(d, d)
+                w_s = mod_weights_np[idx, 0]
+                w_b = mod_weights_np[idx, 1]
+                print(f"{d:<10} | {name:<25} | {w_s:<15.4f} | {w_b:<15.4f}")
+                checked_drugs.add(d)
+                
+    viz_rows = []
+    with torch.no_grad():
+        for combo in sample_combos:
+            combo_name = combo['name']
+            drug_ids = [d for d in combo['drug_ids'] if d in drug_to_index]
+            drug_names = [drug_names_dict.get(d, d) for d in drug_ids]
+            
+            print(f"\n--- Drug Combination: {combo_name} ---")
+            print(f"Drugs involved: {', '.join(drug_names)}")
+            
+            inc = np.zeros((num_drugs, len(target_ses)), dtype=np.float32)
+            se_feats = np.zeros((len(target_ses), 768), dtype=np.float32)
+            
+            for s_idx, (cui, _) in enumerate(target_ses):
+                for d in drug_ids:
+                    inc[drug_to_index[d], s_idx] = 1.0
+                if cui in se_embeddings_dict:
+                    se_feats[s_idx] = se_embeddings_dict[cui]
+                    
+            inc_tensor = torch.tensor(inc, dtype=torch.float32).to(device)
+            se_tensor = torch.tensor(se_feats, dtype=torch.float32).to(device)
+            
+            logits, alpha, _ = model(smiles_features, bio_features, inc_tensor, se_tensor, return_attention=True)
+            probs = torch.sigmoid(logits).cpu().numpy()
+            alpha_np = alpha.cpu().numpy()
+            
+            print(f"{'Side Effect':<35} | " + " | ".join([f"{d[:12]:<12}" for d in drug_names]) + " | Predicted Prob")
+            print("-" * (37 + 15 * len(drug_names) + 17))
+            
+            for s_idx, (cui, se_label) in enumerate(target_ses):
+                weights = [alpha_np[s_idx, drug_to_index[d]] for d in drug_ids]
+                prob = probs[s_idx]
+                w_str = " | ".join([f"{w:12.4f}" for w in weights])
+                print(f"{se_label:<35} | {w_str} | {prob:14.4f}")
+                
+                for d_id, d_name, w in zip(drug_ids, drug_names, weights):
+                    viz_rows.append({
+                        'Combination': combo_name,
+                        'DrugBank_ID': d_id,
+                        'Drug_Name': d_name,
+                        'Side_Effect_CUI': cui,
+                        'Side_Effect_Name': se_label,
+                        'Attention_Weight': w,
+                        'Predicted_Probability': prob
+                    })
+                    
+    viz_df = pd.DataFrame(viz_rows)
+    viz_path = os.path.join(output_dir, 'attention_visualization_exp_d.csv')
+    viz_df.to_csv(viz_path, index=False)
+    print(f"\nAttention visualization table saved to: {viz_path}")
+    return viz_df
+
+def main():
+    parser = argparse.ArgumentParser(description="HyperAttDDI with Multimodal Bio Attention Fusion (Exp D)")
+    parser.add_argument('--lr', type=float, default=0.0005, help="Learning rate")
+    parser.add_argument('--weight_decay', type=float, default=0.001, help="Weight decay")
+    parser.add_argument('--epochs', type=int, default=100, help="Training epochs")
+    parser.add_argument('--batch_size', type=int, default=64, help="Batch size")
+    parser.add_argument('--eval_batch_size', type=int, default=512, help="Eval batch size")
+    parser.add_argument('--emb_dim', type=int, default=256, help="Embedding dimension")
+    parser.add_argument('--bio_emb_dim', type=int, default=128, help="Bio projection dimension")
+    parser.add_argument('--conv_dim', type=int, default=64, help="Hypergraph conv dimension per head")
+    parser.add_argument('--heads', type=int, default=4, help="Attention heads")
+    parser.add_argument('--d', type=int, default=64, help="Attention query/key dimension")
+    parser.add_argument('--dropout', type=float, default=0.1, help="Dropout probability")
+    parser.add_argument('--seed', type=int, default=42, help="Random seed")
+    parser.add_argument('--output_dir', type=str, default='output_hyperattddi_d', help="Output directory")
+    args, _ = parser.parse_known_args()
+    
+    set_random_seed(args.seed)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    
+    base_path = find_dataset_path()
+    print(f"Dataset root found: {base_path}")
+    
+    data = load_data(base_path, device)
+    smiles_features = data['smiles_features']
+    bio_features = data['bio_features']
+    train_inc = data['train_inc']
+    train_se = data['train_se']
+    y_train = data['train_lab']
+    
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    model = HyperAttDDI_Bio(
+        smiles_dim=768,
+        bio_dim=bio_features.shape[1],
+        emb_dim=args.emb_dim,
+        bio_emb_dim=args.bio_emb_dim,
+        conv_dim=args.conv_dim,
+        heads=args.heads,
+        d=args.d,
+        p=args.dropout
+    ).to(device)
+    
+    model.apply(init_weights)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    criterion = nn.BCEWithLogitsLoss()
+    
+    print(f"\nModel initialized: {sum(p.numel() for p in model.parameters() if p.requires_grad)} trainable parameters.")
+    print("Starting training (HyperAttDDI with Biological Attention Fusion - Exp D)...\n")
+    
+    max_valid_f1 = 0.0
+    best_epoch = -1
+    best_metrics = None
+    best_weights = None
+    
+    num_samples = train_inc.shape[1]
+    num_batches = num_samples // args.batch_size
+    
+    for epoch in range(args.epochs):
+        model.train()
+        epoch_loss = 0.0
+        
+        # Shuffle training incidence columns and corresponding SE features
+        indices = torch.randperm(num_samples)
+        shuffled_train_inc = train_inc[:, indices]
+        shuffled_train_se = train_se[indices]
+        shuffled_y_train = y_train[indices]
+        
+        pbar = tqdm(range(num_batches), desc=f"Epoch {epoch+1:03d}/{args.epochs:03d}", leave=False)
+        for b in pbar:
+            optimizer.zero_grad()
+            batch_inc = shuffled_train_inc[:, b * args.batch_size:(b + 1) * args.batch_size].to(device)
+            batch_se = shuffled_train_se[b * args.batch_size:(b + 1) * args.batch_size].to(device)
+            batch_y = shuffled_y_train[b * args.batch_size:(b + 1) * args.batch_size].to(device)
+            
+            logits = model(smiles_features, bio_features, batch_inc, batch_se)
+            loss = criterion(logits, batch_y)
+            loss.backward()
+            optimizer.step()
+            
+            epoch_loss += loss.item()
+            pbar.set_postfix({'loss': f"{loss.item():.4f}"})
+            
+        avg_loss = epoch_loss / num_batches
+        
+        # Validation
+        val_res = evaluate_dataset(
+            model, smiles_features, bio_features, data['val_inc'], data['val_se'], data['val_lab'], device, batch_size=args.eval_batch_size
+        )
+        
+        val_f1 = val_res['f1']
+        val_auc = val_res['auc']
+        
+        print(f"Epoch {epoch+1:03d} | Loss: {avg_loss:.4f} | Val F1: {val_f1:.4f} | Val AUC: {val_auc:.4f} | Val Precision: {val_res['precision']:.4f} | Val Recall: {val_res['recall']:.4f}")
+        
+        if val_f1 > max_valid_f1:
+            max_valid_f1 = val_f1
+            best_epoch = epoch + 1
+            best_metrics = val_res
+            best_weights = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            torch.save(best_weights, os.path.join(args.output_dir, 'best_hyperattddi_exp_d.pt'))
+            print(f"  --> Saved new best model checkpoint (Val F1: {val_f1:.4f})")
+            
+    print(f"\n=======================================================")
+    print(f"Training Complete. Best Validation F1: {max_valid_f1:.4f} (Epoch {best_epoch})")
+    print(f"Loading best checkpoint for Final Test Evaluation...")
+    print(f"=======================================================")
+    
+    model.load_state_dict(best_weights)
+    model.to(device)
+    
+    test_res = evaluate_dataset(
+        model, smiles_features, bio_features, data['test_inc'], data['test_se'], data['test_lab'], device, batch_size=args.eval_batch_size
+    )
+    
+    print("\n--- Final Test Results (HyperAttDDI + Bio - Exp D) ---")
+    print(f"Precision: {test_res['precision']:.4f}")
+    print(f"Recall:    {test_res['recall']:.4f}")
+    print(f"F1 Score:  {test_res['f1']:.4f}")
+    print(f"AUC:       {test_res['auc']:.4f}")
+    print(f"PRAUC:     {test_res['prauc']:.4f}")
+    print("-----------------------------------------------------\n")
+    
+    # Save results summary
+    res_df = pd.DataFrame([{
+        'Model': 'HyperAttDDI (Exp D - Multimodal Bio)',
+        'Precision': test_res['precision'],
+        'Recall': test_res['recall'],
+        'F1': test_res['f1'],
+        'AUC': test_res['auc'],
+        'PRAUC': test_res['prauc'],
+        'Best_Epoch': best_epoch,
+        'Best_Val_F1': max_valid_f1
+    }])
+    res_df.to_csv(os.path.join(args.output_dir, 'exp_d_results.csv'), index=False)
+    print(f"Results saved to: {os.path.join(args.output_dir, 'exp_d_results.csv')}")
+    
+    # Perform attention and modality visualization
+    perform_attention_and_modality_visualization(model, smiles_features, bio_features, data, device, args.output_dir)
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,29 @@
+Combination,DrugBank_ID,Drug_Name,Side_Effect_CUI,Side_Effect_Name,Attention_Weight,Predicted_Probability
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB00758,Clopidogrel,C0741553,Hemorrhage / Bleeding,0.32684767,0.57627684
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB14726,Dabigatran,C0741553,Hemorrhage / Bleeding,0.3254035,0.57627684
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB00945,Acetylsalicylic acid,C0741553,Hemorrhage / Bleeding,0.34774885,0.57627684
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB00758,Clopidogrel,C0151746,Renal Failure / Kidney Injury,0.32264125,0.7340456
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB14726,Dabigatran,C0151746,Renal Failure / Kidney Injury,0.32033783,0.7340456
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB00945,Acetylsalicylic acid,C0151746,Renal Failure / Kidney Injury,0.35702088,0.7340456
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB00758,Clopidogrel,C0020649,Hypotension,0.323826,0.71407956
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB14726,Dabigatran,C0020649,Hypotension,0.32178596,0.71407956
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB00945,Acetylsalicylic acid,C0020649,Hypotension,0.354388,0.71407956
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB00758,Clopidogrel,C0018790,Cardiac Arrest,0.32268703,0.5420397
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB14726,Dabigatran,C0018790,Cardiac Arrest,0.32040563,0.5420397
+Cardiovascular Combo (Antiplatelet + Anticoagulant),DB00945,Acetylsalicylic acid,C0018790,Cardiac Arrest,0.3569073,0.5420397
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB01175,Escitalopram,C0741553,Hemorrhage / Bleeding,0.23544575,0.5690033
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00349,Clobazam,C0741553,Hemorrhage / Bleeding,0.23544618,0.5690033
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00230,Pregabalin,C0741553,Hemorrhage / Bleeding,0.2936573,0.5690033
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00193,Tramadol,C0741553,Hemorrhage / Bleeding,0.23545076,0.5690033
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB01175,Escitalopram,C0151746,Renal Failure / Kidney Injury,0.22618079,0.72541744
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00349,Clobazam,C0151746,Renal Failure / Kidney Injury,0.22618121,0.72541744
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00230,Pregabalin,C0151746,Renal Failure / Kidney Injury,0.3214501,0.72541744
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00193,Tramadol,C0151746,Renal Failure / Kidney Injury,0.2261879,0.72541744
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB01175,Escitalopram,C0020649,Hypotension,0.22911762,0.70607126
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00349,Clobazam,C0020649,Hypotension,0.22911839,0.70607126
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00230,Pregabalin,C0020649,Hypotension,0.3126391,0.70607126
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00193,Tramadol,C0020649,Hypotension,0.22912496,0.70607126
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB01175,Escitalopram,C0018790,Cardiac Arrest,0.2265818,0.533855
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00349,Clobazam,C0018790,Cardiac Arrest,0.22658251,0.533855
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00230,Pregabalin,C0018790,Cardiac Arrest,0.32024622,0.533855
+CNS Neuro-Psychiatric Combo (SSRI + Benzo + Anticonvulsant + Opioid),DB00193,Tramadol,C0018790,Cardiac Arrest,0.22658947,0.533855
