@@ -56,30 +56,30 @@ All models evaluated on the exact same 41-quarter temporal chronological split (
 | **Stage 3 (Exp B - HyperAttDDI No SE)** | 2-layer Hypergraph + Generic Attention | SMILES only | Generic | 0.8384 | 0.9405 | 0.8865 | 0.9372 | 0.9175 |
 | **Stage 4 (Exp C - HyperAttDDI + SE)** | 2-layer Hypergraph + SE-Conditioned Attn | SMILES + SapBERT | **SE-Conditioned** | 0.8724 | **0.9511** | 0.9101 | **0.9518** | **0.9285** |
 | **Stage 5 (Exp D - HyperAttDDI + Bio)** | Multimodal Bio Fusion + SE-Conditioned Attn | SMILES + Bio + SapBERT | **SE-Conditioned** | **0.8766** | 0.9469 | **0.9104** | 0.9505 | 0.9252 |
-| **Stage 6 (Exp E - Mean Pool Ablation)** | 2-layer Hypergraph + Naive Mean Pooling | SMILES only | Mean Pool | 0.8290 | 0.9380 | 0.8801 | 0.9192 | 0.8965 |
+| **Stage 6 (Exp E - Mean Pool Ablation)** | 2-layer Hypergraph + Naive Mean Pooling | SMILES only | Mean Pool | *Ablation code in `experiments/exp_e`* | | | | |
 
 ---
 
 ## 📊 Ablation Studies
 
 ### 1. Adverse-Event Conditioning (Exp C vs. Exp B)
-* Without SE conditioning (Exp B), the model cannot distinguish between different adverse reactions, dropping Precision to **0.8384**.
+* Without SE conditioning (Exp B), the model cannot distinguish between different adverse reactions, yielding Precision of **0.8384**.
 * Injecting SapBERT adverse event conditioning (Exp C) resolves target ambiguity, boosting Precision to **0.8724 (+3.40%)**, AUC to **0.9518 (+1.46%)**, and PRAUC to **0.9285 (+1.10%)**.
 
 ### 2. Attention Pooling vs. Mean Pooling (Exp B vs. Exp E)
-* Replacing learned attention pooling with naive mean pooling drops AUC from **0.9372 to 0.9192 (-1.80%)** and PRAUC from **0.9175 to 0.8965 (-2.10%)**, confirming that member drugs contribute unequally to adverse reactions.
+* To isolate whether learned attention pooling outperforms uniform aggregation, Exp E replaces Module 3 attention with naive mean pooling ($h_e = \frac{1}{|e|} \sum X_i$). Scripts (`run_exp_e.py`) and notebooks (`kaggle_exp_e.ipynb`) are provided in `experiments/exp_e_mean_pool_ablation/` to execute this ablation.
 
 ### 3. Performance Stratified by Interaction Order ($k = 2, 3, 4, 5, 6+$)
+* To examine how model performance scales with combination cardinality, `stratified_eval_k.py` evaluates trained checkpoints across interaction orders ($k = 2, 3, 4, 5, 6+$):
 
-| Interaction Order ($k$) | Test Sample Count | MLP (AUC) | GAT (AUC) | HGNN-SA (AUC) | HyperAttDDI (AUC) | HyperAttDDI Advantage |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **$k = 2$ (Pairs)** | 1,404 | 0.8935 | 0.8520 | 0.9250 | **0.9534** | **+2.84%** |
-| **$k = 3$ (Triplets)** | 1,328 | 0.8912 | 0.8490 | 0.9230 | **0.9528** | **+2.98%** |
-| **$k = 4$ (Quartets)** | 1,046 | 0.8870 | 0.8350 | 0.9190 | **0.9512** | **+3.22%** |
-| **$k = 5$ (Quintets)** | 874 | 0.8790 | 0.8120 | 0.9120 | **0.9495** | **+3.75%** |
-| **$k \ge 6$ (Sextets+)** | 1,934 | 0.8650 | 0.7740 | 0.8980 | **0.9468** | **+4.88%** |
+| Interaction Order ($k$) | Test Sample Count | MLP (AUC) | GAT (AUC) | HGNN-SA (AUC) | HyperAttDDI (AUC) |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| **$k = 2$ (Pairs)** | 1,404 | 0.8935 | 0.8520 | 0.9250 | *Run script* |
+| **$k = 3$ (Triplets)** | 1,328 | 0.8912 | 0.8490 | 0.9230 | *Run script* |
+| **$k = 4$ (Quartets)** | 1,046 | 0.8870 | 0.8350 | 0.9190 | *Run script* |
+| **$k = 5$ (Quintets)** | 874 | 0.8790 | 0.8120 | 0.9120 | *Run script* |
+| **$k \ge 6$ (Sextets+)** | 1,934 | 0.8650 | 0.7740 | 0.8980 | *Run script* |
 
-> **Key Finding:** While pairwise models (GAT) collapse by **7.8%** as combination size increases, HyperAttDDI maintains robust stability (>0.946 AUC), widening its advantage to **+4.88%** at $k \ge 6$.
 
 ---
 
@@ -181,14 +181,20 @@ All notebooks in the `notebooks/` directory are self-contained:
 
 ## 🩺 Clinical Case Studies & Interpretability
 
-HyperAttDDI provides faithful, interpretable attention weights across multi-drug regimens:
+HyperAttDDI produces adverse-event-conditioned attention weights across multi-drug regimens. From our empirical test evaluation of Exp C on Kaggle:
 
 ### Case Study: Cardiovascular Triple Therapy
-* **Regimen:** Clopidogrel (P2Y12 inhibitor) + Dabigatran (thrombin inhibitor) + Aspirin (COX-1 inhibitor)
-* **Renal Failure Risk:** Predicted probability = **`0.9990`** (Dabigatran attention = **`0.5087`**)
-* **Bleeding Risk:** Predicted probability = **`0.8629`** (Dabigatran attention = **`0.5087`**)
-* **Non-Events (Hypotension, Cardiac Arrest):** Predicted probability = **`0.0000`**
-* **Clinical Rationale:** Dabigatran is >80% renally cleared. Impaired clearance triggers fatal bleeding. The model correctly identifies Dabigatran as the dominant culprit while suppressing false alarms for unrelated conditions.
+* **Regimen:** Clopidogrel (P2Y12 inhibitor) + Dabigatran (thrombin inhibitor) + Acetylsalicylic acid / Aspirin (COX-1 inhibitor)
+
+| Queried Side Effect | Clopidogrel | Dabigatran | Acetylsalicylic acid | Predicted Probability |
+| :--- | :---: | :---: | :---: | :---: |
+| **Renal Failure / Kidney Injury** | 0.3226 | 0.3203 | 0.3570 | **0.7340** |
+| **Hypotension** | 0.3238 | 0.3218 | 0.3544 | **0.7141** |
+| **Hemorrhage / Bleeding** | 0.3268 | 0.3254 | 0.3477 | **0.5763** |
+| **Cardiac Arrest** | 0.3227 | 0.3204 | 0.3569 | **0.5420** |
+
+* **Modality Gating (Exp D):** Across multi-drug combinations, the attention fusion assigns an average weight of **99.89%** to ChemBERTa chemical semantics and **0.11%** to sparse biological targets/enzymes.
+
 
 ---
 

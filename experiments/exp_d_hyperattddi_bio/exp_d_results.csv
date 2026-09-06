@@ -1,2 +1,0 @@
-Model,Precision,Recall,F1,AUC,PRAUC,Best_Epoch,Best_Val_F1
-HyperAttDDI (Exp D - Multimodal Bio),0.8766,0.9469,0.9104,0.9505,0.9252,99,0.9091

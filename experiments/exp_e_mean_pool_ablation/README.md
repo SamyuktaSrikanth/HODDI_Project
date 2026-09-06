@@ -9,17 +9,12 @@ Ablation experiment replacing Module 3 learned attention pooling with naive unwe
 - **Module 3 (Mean Pooling):** $h_e = (H^T X_2) / \text{deg}_e$ (No attention query, key, value).
 - **Module 5 (Decoder):** `Linear(256 -> 128) -> ReLU -> Dropout -> Linear(128 -> 1)`.
 
-## Comparison against Attention Pooling (Exp B vs Exp E)
-| Metric | Exp E (Mean Pooling) | Exp B (Attention Pooling) | Advantage of Attention |
-| :--- | :---: | :---: | :---: |
-| **AUC** | 0.9192 | **0.9372** | **+1.80%** |
-| **PRAUC** | 0.8965 | **0.9175** | **+2.10%** |
-| **F1 Score** | 0.8801 | **0.8865** | **+0.64%** |
-| **Precision** | 0.8290 | **0.8384** | **+0.94%** |
-| **Recall** | 0.9380 | **0.9405** | **+0.25%** |
+## Ablation Objective (Exp B vs Exp E)
+This experiment isolates the contribution of learned attention pooling by replacing Module 3 attention with naive unweighted mean pooling. Comparing Exp B against Exp E tests whether attention-weighted aggregation provides a measurable performance advantage over mean pooling.
 
 ## How to Run
 ```bash
 python run_exp_e.py --epochs 100 --batch_size 64
 ```
-Or open `kaggle_exp_e.ipynb` on Kaggle.
+Or open `kaggle_exp_e.ipynb` on Kaggle (T4 GPU recommended).
+

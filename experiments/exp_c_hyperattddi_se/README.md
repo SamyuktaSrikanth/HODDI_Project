@@ -20,11 +20,27 @@ The core scientific contribution of HyperAttDDI. Eliminates the label contradict
 - **Precision:** **0.8724** (+1.53% over baseline, +3.40% over Exp B)
 - **Recall:** **0.9511** (+2.00% over baseline)
 
-## Included Artifacts
-- `attention_visualization.csv`: Attention weight distribution across cardiovascular and neuro-psychiatric drug combinations under diverse adverse events.
+## Empirical Attention Distribution (Kaggle Test Run)
+
+### Cardiovascular Regimen (Clopidogrel + Dabigatran + Aspirin)
+| Queried Side Effect | Clopidogrel | Dabigatran | Acetylsalicylic acid | Predicted Prob |
+| :--- | :---: | :---: | :---: | :---: |
+| Hemorrhage / Bleeding | 0.3268 | 0.3254 | 0.3477 | 0.5763 |
+| Renal Failure / Kidney Injury | 0.3226 | 0.3203 | 0.3570 | 0.7340 |
+| Hypotension | 0.3238 | 0.3218 | 0.3544 | 0.7141 |
+| Cardiac Arrest | 0.3227 | 0.3204 | 0.3569 | 0.5420 |
+
+### Neuro-Psychiatric Regimen (Escitalopram + Clobazam + Pregabalin + Tramadol)
+| Queried Side Effect | Escitalopram | Clobazam | Pregabalin | Tramadol | Predicted Prob |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| Hemorrhage / Bleeding | 0.2354 | 0.2354 | 0.2937 | 0.2355 | 0.5690 |
+| Renal Failure / Kidney Injury | 0.2262 | 0.2262 | 0.3215 | 0.2262 | 0.7254 |
+| Hypotension | 0.2291 | 0.2291 | 0.3126 | 0.2291 | 0.7061 |
+| Cardiac Arrest | 0.2266 | 0.2266 | 0.3202 | 0.2266 | 0.5339 |
 
 ## How to Run
 ```bash
 python run_exp_c.py --epochs 100 --batch_size 64
 ```
 Or open `kaggle_exp_c.ipynb` on Kaggle.
+
