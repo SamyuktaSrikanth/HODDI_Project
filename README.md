@@ -43,20 +43,25 @@ Official implementation of **HyperAttDDI**, a deep hypergraph neural network arc
 
 ---
 
-## 🏆 Master Benchmark Results
+### 🏆 Master Benchmark Results (Our Empirical Implementations from Exp A)
 
-All models evaluated on the exact same 41-quarter temporal chronological split (29 train, 6 validation, 6 test quarters; 70:15:15 ratio) on the HODDI evaluation subset:
+All models below were **implemented, trained, and evaluated by us** on the exact same 41-quarter temporal chronological split (29 train, 6 validation, 6 test quarters; 70:15:15 ratio) on the HODDI evaluation subset:
 
-| Stage / Experiment | Architecture Description | Features | Attention Pooling? | Precision | Recall | F1 Score | AUC | PRAUC |
-| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Stage 1 (MLP Baseline)** | 2-layer MLP on flattened vector | SMILES + SapBERT | No | 0.7896 | 0.8510 | 0.8191 | 0.8923 | 0.8671 |
-| **GCN (Published Benchmark)** | Pairwise Graph Decomposition | SMILES only | No | 0.7450 | 0.8140 | 0.7780 | 0.8290 | 0.8050 |
-| **GAT (Published Benchmark)** | Pairwise Graph Attention | SMILES only | No | 0.7430 | 0.8870 | 0.8090 | 0.8510 | 0.7890 |
-| **Stage 2 (Exp A - HGNN-SA)** | 1-layer HGNN baseline (reproduced) | SMILES only | No | 0.8571 | 0.9311 | 0.8926 | 0.9211 | 0.8760 |
-| **Stage 3 (Exp B - HyperAttDDI No SE)** | 2-layer Hypergraph + Generic Attention | SMILES only | Generic | 0.8384 | 0.9405 | 0.8865 | 0.9372 | 0.9175 |
-| **Stage 4 (Exp C - HyperAttDDI + SE)** | 2-layer Hypergraph + SE-Conditioned Attn | SMILES + SapBERT | **SE-Conditioned** | 0.8724 | **0.9511** | 0.9101 | **0.9518** | **0.9285** |
-| **Stage 5 (Exp D - HyperAttDDI + Bio)** | Multimodal Bio Fusion + SE-Conditioned Attn | SMILES + Bio + SapBERT | **SE-Conditioned** | **0.8766** | 0.9469 | **0.9104** | 0.9505 | 0.9252 |
-| **Stage 6 (Exp E - Mean Pool Ablation)** | 2-layer Hypergraph + Naive Mean Pooling | SMILES only | Mean Pool | *Ablation code in `experiments/exp_e`* | | | | |
+| Experiment | Model / Architecture | Implementation Type | Drug Features | Adverse Event Conditioning? | Precision | Recall | F1 Score | AUC | PRAUC |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Exp A** | **HGNN-SA Baseline** | **Our Reproduction of Paper Model** | SMILES only | None (Unweighted $H^T X$) | 0.8571 | 0.9311 | 0.8926 | 0.9211 | 0.8760 |
+| **Exp B** | **HyperAttDDI (No SE)** | **Our Proposed Implementation** | SMILES only | Generic Attention | 0.8384 | 0.9405 | 0.8865 | 0.9372 | 0.9175 |
+| **Exp C** | **HyperAttDDI + SE** | **Our Proposed Implementation (Core)** | SMILES + SapBERT | **SE-Conditioned** | 0.8724 | **0.9511** | 0.9101 | **0.9518** | **0.9285** |
+| **Exp D** | **HyperAttDDI + Bio** | **Our Proposed Implementation (Multimodal)** | SMILES + Bio + SapBERT | **SE-Conditioned** | **0.8766** | 0.9469 | **0.9104** | 0.9505 | 0.9252 |
+
+> [!NOTE]
+> ### Distinction: Paper Baseline vs. Our Implementations
+> - **Paper Baseline (Wang et al., 2025):** The authors of the HODDI benchmark proposed the HGNN-SA architecture and reported ~0.95 AUC in their paper.
+> - **Our Reproduction (Exp A):** We implemented and trained the HGNN-SA baseline from scratch under the standardized 41-quarter chronological split on Kaggle GPU, establishing our verified empirical baseline of **0.9211 AUC** (0.8760 PRAUC, 0.8926 F1).
+> - **Our Proposed Implementations (Exp B, C, D):** All HyperAttDDI architectures were designed and implemented by us. Comparing fairly against our reproduced Exp A baseline under identical inputs and splits:
+>   - **Exp B (Architecture Alone):** Achieves **+1.61% AUC** and **+4.15% PRAUC** over HGNN-SA without any side effect features.
+>   - **Exp C (SE Conditioning):** Achieves **+3.07% AUC** (0.9518), **+5.25% PRAUC** (0.9285), and **+1.53% Precision** (0.8724).
+>   - **Exp D (Multimodal Bio Fusion):** Drives Precision to a project peak of **0.8766** (+1.95% over baseline) and F1 to **0.9104** (+1.78%).
 
 ---
 
@@ -72,13 +77,13 @@ All models evaluated on the exact same 41-quarter temporal chronological split (
 ### 3. Performance Stratified by Interaction Order ($k = 2, 3, 4, 5, 6+$)
 * To examine how model performance scales with combination cardinality, `stratified_eval_k.py` evaluates trained checkpoints across interaction orders ($k = 2, 3, 4, 5, 6+$):
 
-| Interaction Order ($k$) | Test Sample Count | MLP (AUC) | GAT (AUC) | HGNN-SA (AUC) | HyperAttDDI (AUC) |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| **$k = 2$ (Pairs)** | 1,404 | 0.8935 | 0.8520 | 0.9250 | *Run script* |
-| **$k = 3$ (Triplets)** | 1,328 | 0.8912 | 0.8490 | 0.9230 | *Run script* |
-| **$k = 4$ (Quartets)** | 1,046 | 0.8870 | 0.8350 | 0.9190 | *Run script* |
-| **$k = 5$ (Quintets)** | 874 | 0.8790 | 0.8120 | 0.9120 | *Run script* |
-| **$k \ge 6$ (Sextets+)** | 1,934 | 0.8650 | 0.7740 | 0.8980 | *Run script* |
+| Interaction Order ($k$) | Test Sample Count | Exp A: HGNN-SA (Reproduction) | Exp C: HyperAttDDI + SE (Proposed) |
+| :---: | :---: | :---: | :---: |
+| **$k = 2$ (Pairs)** | 1,404 | *Run script* | *Run script* |
+| **$k = 3$ (Triplets)** | 1,328 | *Run script* | *Run script* |
+| **$k = 4$ (Quartets)** | 1,046 | *Run script* | *Run script* |
+| **$k = 5$ (Quintets)** | 874 | *Run script* | *Run script* |
+| **$k \ge 6$ (Sextets+)** | 1,934 | *Run script* | *Run script* |
 
 
 ---

@@ -116,17 +116,22 @@ $$\mathcal{L} = -\sum_{e=1}^E \left[ y_e \log \hat{y}_e + (1 - y_e) \log (1 - \h
 
 ---
 
-### Main Benchmark Results
+### Empirical Benchmark Results (Our Implementations from Exp A)
 
-| Stage / Model | Architecture & Feature Set | Attention Pooling? | Precision | Recall | F1 Score | AUC | PRAUC |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **MLP (Stage 1)** | Flattened Concatenation (1536d) | No | 0.7896 | 0.8510 | 0.8191 | 0.8923 | 0.8671 |
-| **GCN (Published)** | Pairwise Graph Decomposition | No | 0.7450 | 0.8140 | 0.7780 | 0.8290 | 0.8050 |
-| **GAT (Published)** | Pairwise Graph Attention | No | 0.7430 | 0.8870 | 0.8090 | 0.8510 | 0.7890 |
-| **HGNN-SA (Stage 2 / Exp A)** | 1-Layer HGNN (No SE feature) | No | 0.8571 | 0.9311 | 0.8926 | 0.9211 | 0.8760 |
-| **HyperAttDDI (Stage 3 / Exp B)** | 2-Layer Hypergraph + Generic Attention | Generic | 0.8384 | 0.9405 | 0.8865 | 0.9372 | 0.9175 |
-| **HyperAttDDI + SE (Stage 4 / Exp C)**| 2-Layer Hypergraph + SE-Conditioned Attn | **SE-Conditioned** | 0.8724 | **0.9511** | 0.9101 | **0.9518** | **0.9285** |
-| **HyperAttDDI + Bio (Stage 5 / Exp D)**| Multimodal Bio Fusion + SE-Conditioned Attn | **SE-Conditioned** | **0.8766** | 0.9469 | **0.9104** | 0.9505 | 0.9252 |
+All models were implemented, trained, and evaluated on the exact same 41-quarter temporal chronological split (29 train, 6 validation, 6 test quarters; 70:15:15 ratio) on the HODDI evaluation subset:
+
+| Experiment | Model / Architecture | Implementation Type | Drug Features | Attention Pooling? | Precision | Recall | F1 Score | AUC | PRAUC |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Exp A** | **HGNN-SA Baseline** | **Our Reproduction of Paper Model** | SMILES only | None (Unweighted $H^T X$) | 0.8571 | 0.9311 | 0.8926 | 0.9211 | 0.8760 |
+| **Exp B** | **HyperAttDDI (No SE)** | **Our Proposed Implementation** | SMILES only | Generic Attention | 0.8384 | 0.9405 | 0.8865 | 0.9372 | 0.9175 |
+| **Exp C** | **HyperAttDDI + SE** | **Our Proposed Implementation (Core)** | SMILES + SapBERT | **SE-Conditioned** | 0.8724 | **0.9511** | 0.9101 | **0.9518** | **0.9285** |
+| **Exp D** | **HyperAttDDI + Bio** | **Our Proposed Implementation (Multimodal)** | SMILES + Bio + SapBERT | **SE-Conditioned** | **0.8766** | 0.9469 | **0.9104** | 0.9505 | 0.9252 |
+
+> **Distinction Between Paper Baseline and Our Implementations:**
+> - **Paper Baseline (Wang et al., 2025):** The original HODDI publication introduced HGNN-SA and reported an AUC of ~0.95.
+> - **Our Reproduction (Exp A):** We implemented and trained the HGNN-SA baseline from scratch under the standardized 41-quarter chronological split on Kaggle T4 GPU, yielding our verified empirical baseline of **0.9211 AUC** (0.8760 PRAUC, 0.8926 F1).
+> - **Our Proposed Architectures (Exp B, C, D):** All HyperAttDDI variants were designed and implemented by us. Exp B achieves **+1.61% AUC** over HGNN-SA purely through architecture; Exp C achieves **+3.07% AUC** and **+5.25% PRAUC** via adverse-event conditioning; and Exp D achieves peak Precision of **0.8766**.
+
 
 ---
 
