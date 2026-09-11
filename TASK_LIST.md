@@ -142,6 +142,13 @@
 - **Dependencies:** Task 4.2
 - **Verification:** Complete ablation comparison table logged for all feature combinations.
 
+### Task 5.5: Ablation Experiment 5 - Message Passing Depth & Hop Sensitivity (Experiment G)
+- [x] Implement parameterized $L$-hop hypergraph message passing model `HyperAttDDI_HopAblation`.
+- [x] Evaluate trade-offs across 1, 2, 3, and 4 hops (ROC-AUC, PR-AUC, F1, Loss, Parameter Count).
+- [x] Generate publication-quality 4-panel comparison graph (`message_passing_hops_comparison.png`) showing Pareto efficiency and over-smoothing threshold.
+- **Dependencies:** Task 4.2
+- **Verification:** Metrics and Pareto chart saved in `experiments/exp_g_message_passing_hops/`.
+
 ---
 
 ## Phase 6: Clinical Interpretability & Culprit Drug Profiling
