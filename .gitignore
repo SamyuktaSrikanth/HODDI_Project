@@ -51,3 +51,6 @@ best_*.pt
 *.swo
 .DS_Store
 Thumbs.db
+
+# Documentation / Scratch notes
+EXPERIMENTS_EXPLAINED.md
