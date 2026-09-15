@@ -1,23 +1,12 @@
-import os
-import ast
-import math
-import argparse
-import random
+import os, ast, math, copy, random, argparse
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.nn as hnn
-from sklearn.metrics import (
-    precision_score,
-    recall_score,
-    f1_score,
-    roc_auc_score,
-    average_precision_score,
-)
+from tqdm import tqdm
+from sklearn.metrics import f1_score, recall_score, precision_score, roc_auc_score, average_precision_score
 
 def set_random_seed(seed=42):
     random.seed(seed)
@@ -26,50 +15,31 @@ def set_random_seed(seed=42):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-def init_weights(m):
-    if isinstance(m, nn.Linear):
-        nn.init.xavier_uniform_(m.weight)
-        if m.bias is not None:
-            nn.init.zeros_(m.bias)
-
 class HyperAttDDI_NoSE(nn.Module):
     """
     HyperAttDDI without Side-Effect Features (Exp B).
-    Fair comparison against HGNN-SA baseline with identical SMILES features.
-    
-    Architecture:
-    - Module 1 (Drug Encoder): ChemBERTa (768) -> Linear(768->256) -> ReLU -> Dropout
-    - Module 2 (Hypergraph Encoder): 2-layer PyG HypergraphConv(256, 64, heads=4, use_attention=True)
-    - Module 3 (Attention Pooling, no SE):
-        q = W_q(h_e_mean)
-        k_i = W_k(h_i)
-        alpha = softmax(q @ k.T / sqrt(d)) (masked by hyperedge membership)
-        h_e = alpha @ W_v(h_i)
-    - Module 5 (Decoder): Linear(256->128) -> ReLU -> Dropout -> Linear(128->1)
+    Now takes both SMILES features and Structural Incidence features (like Exp A).
     """
-    def __init__(self, in_dim=768, emb_dim=256, conv_dim=64, heads=4, d=64, p=0.1):
+    def __init__(self, struct_dim, in_dim=768, emb_dim=256, conv_dim=64, heads=4, d=64, p=0.1):
         super().__init__()
         self.d = d
         self.p = p
         
-        # Module 1 (Drug Encoder)
-        self.drug_encoder = nn.Sequential(
-            nn.Linear(in_dim, emb_dim),
-            nn.ReLU(),
-            nn.Dropout(p=p)
-        )
+        # 1. Drug Encoder (Text + Structure)
+        self.struct_encoder = nn.Linear(struct_dim, 128)
+        self.drug_encoder = nn.Linear(in_dim, 128)
+        self.input_dropout = nn.Dropout(p=p)
         
-        # Module 2 (Hypergraph Encoder): L=2 layers
-        # conv_dim * heads = 64 * 4 = 256
+        # 2. Hypergraph Encoder: L=2 layers (conv_dim * heads = 256)
         self.conv1 = hnn.HypergraphConv(emb_dim, conv_dim, heads=heads, use_attention=True, dropout=p)
         self.conv2 = hnn.HypergraphConv(conv_dim * heads, conv_dim, heads=heads, use_attention=True, dropout=p)
         
-        # Module 3 (Attention Pooling, no SE)
+        # 3. Attention Pooling
         self.W_q = nn.Linear(emb_dim, d)
         self.W_k = nn.Linear(emb_dim, d)
         self.W_v = nn.Linear(emb_dim, emb_dim)
         
-        # Module 5 (Decoder)
+        # 5. Decoder
         self.decoder = nn.Sequential(
             nn.Linear(emb_dim, 128),
             nn.ReLU(),
@@ -77,325 +47,247 @@ class HyperAttDDI_NoSE(nn.Module):
             nn.Linear(128, 1)
         )
         
-    def forward(self, drug_features, inc_matrix):
-        """
-        drug_features: (num_drugs, 768)
-        inc_matrix: (num_drugs, batch_hyperedges)
-        """
+    def forward(self, drug_features, struct_features, inc_matrix):
         N, E = inc_matrix.shape
-        H_T = inc_matrix.T  # (E, N)
+        H_T = inc_matrix.T  
         
-        # 1. Drug Encoder
-        X = self.drug_encoder(drug_features)  # (N, 256)
+        s_emb = F.relu(self.struct_encoder(struct_features))
+        d_emb = F.relu(self.drug_encoder(drug_features))
+        X = torch.cat([s_emb, d_emb], dim=1)  # (N, 256)
+        X = self.input_dropout(X)
         
-        # 2. Hypergraph incidence connectivity
-        row, col = torch.where(H_T)  # row: hyperedge idx, col: drug idx
+        row, col = torch.where(H_T)
         edges = torch.cat([col.view(1, -1), row.view(1, -1)], dim=0).to(drug_features.device)
         
-        # Hyperedge attributes for HypergraphConv (mean of member drug embeddings)
-        degree_e = H_T.sum(dim=1, keepdim=True).clamp(min=1)  # (E, 1)
+        degree_e = H_T.sum(dim=1, keepdim=True).clamp(min=1)
         
-        # Layer 1
-        attr1 = (H_T @ X) / degree_e  # (E, 256)
+        attr1 = (H_T @ X) / degree_e
         X1 = F.relu(self.conv1(X, edges, hyperedge_attr=attr1))
         X1 = F.dropout(X1, p=self.p, training=self.training)
         
-        # Layer 2
-        attr2 = (H_T @ X1) / degree_e  # (E, 256)
+        attr2 = (H_T @ X1) / degree_e
         X2 = F.relu(self.conv2(X1, edges, hyperedge_attr=attr2))
         X2 = F.dropout(X2, p=self.p, training=self.training)
         
-        # 3. Attention Pooling
-        h_e_mean = (H_T @ X2) / degree_e  # (E, 256)
-        q = self.W_q(h_e_mean)            # (E, d)
-        k = self.W_k(X2)                  # (N, d)
-        v = self.W_v(X2)                  # (N, 256)
+        h_e_mean = (H_T @ X2) / degree_e
+        q = self.W_q(h_e_mean)
+        k = self.W_k(X2)
+        v = self.W_v(X2)
         
-        scores = torch.matmul(q, k.T) / math.sqrt(self.d)  # (E, N)
+        scores = torch.matmul(q, k.T) / math.sqrt(self.d)
         scores = scores.masked_fill(H_T == 0, -1e9)
-        alpha = F.softmax(scores, dim=1)  # (E, N)
-        h_e = torch.matmul(alpha, v)      # (E, 256)
+        alpha = F.softmax(scores, dim=1)
+        h_e = torch.matmul(alpha, v)
         
-        # 5. Decoder
-        logits = self.decoder(h_e).squeeze(-1)  # (E,)
+        logits = self.decoder(h_e).squeeze(-1)
         return logits
 
-def find_dataset_path():
-    if os.path.exists('/kaggle/input'):
-        for root, dirs, files in os.walk('/kaggle/input'):
-            if 'drug_embeddings_768d.pt' in files:
-                return root
-    candidates = ['data', '../data', '../../data', 'dataset', '../dataset', '../../dataset']
-    for c in candidates:
-        if os.path.exists(c) and os.path.exists(os.path.join(c, 'drug_embeddings_768d.pt')):
-            return c
-    for c in candidates:
-        if os.path.exists(c):
-            return c
-    return '.'
+def find_file(filename, search_roots=['/kaggle/input', '/kaggle/working', '.', '..', '../..', 'dataset']):
+    for root_dir in search_roots:
+        if os.path.exists(root_dir):
+            for root, dirs, files in os.walk(root_dir):
+                if filename in files:
+                    return os.path.join(root, filename)
+    return None
 
-def load_data(base_path, device):
-    if os.path.exists(os.path.join(base_path, 'evaluation_subset')):
-        dataset_base_dir = os.path.join(base_path, 'evaluation_subset', 'subset_drug2-8_SE5-50', '')
-    elif os.path.exists(os.path.join(base_path, 'subset_drug2-8_SE5-50')):
-        dataset_base_dir = os.path.join(base_path, 'subset_drug2-8_SE5-50', '')
-    else:
-        dataset_base_dir = os.path.join(base_path, 'dataset', 'evaluation_subset', 'subset_drug2-8_SE5-50', '')
+def find_dir(dirname, search_roots=['/kaggle/input', '.', '..', '../..', 'dataset']):
+    for root_dir in search_roots:
+        if os.path.exists(root_dir):
+            for root, dirs, files in os.walk(root_dir):
+                if dirname in dirs:
+                    return os.path.join(root, dirname)
+    return None
 
-    training_sub_ds_names = ['2015Q1', '2015Q2', '2015Q3', '2016Q4', '2017Q1', '2017Q2', '2017Q3', '2017Q4', '2018Q3', '2019Q1', '2019Q2', '2019Q3', '2019Q4', '2020Q1', '2020Q2', '2020Q3', '2020Q4', '2021Q1', '2021Q3', '2021Q4', '2022Q1', '2022Q2', '2022Q3', '2022Q4', '2023Q1', '2023Q2', '2023Q3', '2023Q4', '2024Q2']
-    validating_sub_ds_names = ['2014Q3', '2015Q4', '2016Q1', '2016Q3', '2021Q2', '2024Q1']
-    testing_sub_ds_names = ['2014Q4', '2016Q2', '2018Q1', '2018Q2', '2018Q4', '2024Q3']
-    
-    emb_candidates = [
-        os.path.join(base_path, "drug_embeddings_768d.pt"),
-        os.path.join(base_path, "dataset", "drug_embeddings_768d.pt"),
-        "dataset/drug_embeddings_768d.pt"
-    ]
-    emb_path = None
-    for cand in emb_candidates:
-        if os.path.exists(cand):
-            emb_path = cand
-            break
-    if emb_path is None:
-        raise FileNotFoundError(f"Missing embeddings file: checked {emb_candidates}")
-    
-    print(f"Loading embeddings from: {emb_path}")
-    drug_embeddings_dict = torch.load(emb_path, map_location='cpu', weights_only=True)
-    
-    def merge_sub_datasets(sub_datasets):
-        pos_merged = pd.DataFrame()
-        neg_merged = pd.DataFrame()
-        for sub_ds in sub_datasets:
-            pos_file = os.path.join(dataset_base_dir, f'{sub_ds}_positive_samples_condition123_SE_above_0.9.csv')
-            neg_file = os.path.join(dataset_base_dir, f'{sub_ds}_negative_samples_condition123_SE_above_0.9.csv')
-            if os.path.exists(pos_file):
-                pos_merged = pd.concat([pos_merged, pd.read_csv(pos_file)], axis=0)
-            if os.path.exists(neg_file):
-                neg_merged = pd.concat([neg_merged, pd.read_csv(neg_file)], axis=0)
-        return pos_merged, neg_merged
+def load_data(device):
+    subset_dir = find_dir('subset_drug2-8_SE5-50')
+    dict_path = find_file('Drugbank_ID_SMILE_all_structure links.csv')
+    smiles_ds = pd.read_csv(dict_path)
+    # CRITICAL FIX: DO NOT drop NaNs. This keeps all 10,250 drugs.
+    drugbank_to_smiles = smiles_ds.set_index('DrugBank ID')['SMILES'].to_dict()
 
-    print("Loading quarterly CSV files...")
-    train_data_pos, train_data_neg = merge_sub_datasets(training_sub_ds_names)
-    val_data_pos, val_data_neg = merge_sub_datasets(validating_sub_ds_names)
-    test_data_pos, test_data_neg = merge_sub_datasets(testing_sub_ds_names)
-    
+    merged_dir = os.path.join(subset_dir, 'merged_subset')
+    all_ds = pd.concat([pd.read_csv(os.path.join(merged_dir, 'positive_samples_2014Q3_2024Q3_step6.csv')), 
+                        pd.read_csv(os.path.join(merged_dir, 'negative_samples_2014Q3_2024Q3_step6.csv'))], axis=0)
+
     all_drugs = set()
-    for df in [train_data_pos, train_data_neg, val_data_pos, val_data_neg, test_data_pos, test_data_neg]:
-        for drug_list in df['DrugBankID']:
-            all_drugs.update([d for d in ast.literal_eval(drug_list) if d.lower() != 'none'])
-            
-    valid_drugs = sorted(list(d for d in all_drugs if d in drug_embeddings_dict))
-    drug_to_index = {drug: idx for idx, drug in enumerate(valid_drugs)}
-    num_drugs = len(valid_drugs)
-    print(f"Total valid unique drugs: {num_drugs}")
+    for drug_ids in all_ds['DrugBankID']:
+        all_drugs.update([d for d in ast.literal_eval(drug_ids) if d.lower() != 'none'])
 
-    def build_incidence_matrix(pos_df, neg_df):
-        inc_pos = np.zeros((num_drugs, len(pos_df)), dtype=np.float32)
-        inc_neg = np.zeros((num_drugs, len(neg_df)), dtype=np.float32)
-        
+    drug_to_index_raw = {drug: idx for idx, drug in enumerate(all_drugs)}
+    raw_drug_id_list = [None] * len(all_drugs)
+    for did in drug_to_index_raw:
+        raw_drug_id_list[drug_to_index_raw[did]] = did
+
+    drug_id_list = [did for did in raw_drug_id_list if did in drugbank_to_smiles]
+    drug_to_index = {did: idx for idx, did in enumerate(drug_id_list)}
+    num_drugs = len(drug_id_list)
+
+    # 4. Generate ChemBERTa Embeddings on the fly to ensure 10,250 drugs with EXACT author padding
+    cache_path = '/kaggle/working/drug_embeddings_768d_author_padded_10250.pt'
+    if os.path.exists(cache_path):
+        print(f"Loading cached author-padded embeddings from: {cache_path}")
+        extra_feature = torch.load(cache_path, map_location=device)
+    else:
+        print("Computing author-identical ChemBERTa embeddings on GPU (takes ~45s)...")
+        from transformers import AutoModelForMaskedLM, AutoTokenizer
+        m_name = 'seyonec/PubChem10M_SMILES_BPE_450k'
+        local_dir = find_dir('PubChem10M_SMILES_BPE_450k')
+        if local_dir:
+            m_name = local_dir
+        tokenizer = AutoTokenizer.from_pretrained(m_name)
+        chem_model = AutoModelForMaskedLM.from_pretrained(m_name).to(device)
+        chem_model.eval()
+
+        smiles_list = [str(drugbank_to_smiles[did]) for did in drug_id_list]
+        chemberta_feat = []
+        batch_size = 64
+        with torch.no_grad():
+            for i in tqdm(range(0, len(smiles_list), batch_size), desc="ChemBERTa Embeddings"):
+                batch_smiles = smiles_list[i:i+batch_size]
+                tokens = tokenizer(batch_smiles, return_tensors="pt", max_length=256, padding='max_length', truncation=True).to(device)
+                outputs = chem_model(**tokens, output_hidden_states=True)
+                chemberta_feat.append(outputs.hidden_states[-1].mean(dim=1))
+
+        extra_feature = torch.cat(chemberta_feat, dim=0)
+        torch.save(extra_feature, cache_path)
+
+    def merge_quarters(sub_datasets):
+        pos_merged, neg_merged = [], []
+        for sub_ds in sub_datasets:
+            pos_f = os.path.join(subset_dir, f'{sub_ds}_positive_samples_condition123_SE_above_0.9.csv')
+            neg_f = os.path.join(subset_dir, f'{sub_ds}_negative_samples_condition123_SE_above_0.9.csv')
+            if os.path.exists(pos_f): pos_merged.append(pd.read_csv(pos_f))
+            if os.path.exists(neg_f): neg_merged.append(pd.read_csv(neg_f))
+        return pd.concat(pos_merged, axis=0), pd.concat(neg_merged, axis=0)
+
+    def build_incidence_pair(pos_df, neg_df):
+        num_pos, num_neg = len(pos_df), len(neg_df)
+        inc_pos = np.zeros((num_drugs, num_pos), dtype=np.float32)
+        inc_neg = np.zeros((num_drugs, num_neg), dtype=np.float32)
         for col_idx, drug_list in enumerate(pos_df['DrugBankID']):
-            for drug_id in ast.literal_eval(drug_list):
-                if drug_id in drug_to_index:
-                    inc_pos[drug_to_index[drug_id], col_idx] = 1.0
-                    
+            for did in ast.literal_eval(drug_list):
+                if did in drug_to_index: inc_pos[drug_to_index[did], col_idx] = 1.0
         for col_idx, drug_list in enumerate(neg_df['DrugBankID']):
-            for drug_id in ast.literal_eval(drug_list):
-                if drug_id in drug_to_index:
-                    inc_neg[drug_to_index[drug_id], col_idx] = 1.0
-                    
-        labels_pos = np.ones(len(pos_df), dtype=np.float32)
-        labels_neg = np.zeros(len(neg_df), dtype=np.float32)
-        return inc_pos, inc_neg, labels_pos, labels_neg
+            for did in ast.literal_eval(drug_list):
+                if did in drug_to_index: inc_neg[drug_to_index[did], col_idx] = 1.0
+        return inc_pos, inc_neg, np.ones(num_pos, dtype=np.int64), np.zeros(num_neg, dtype=np.int64)
 
-    print("Building incidence matrices...")
-    train_inc_pos, train_inc_neg, train_lab_pos, train_lab_neg = build_incidence_matrix(train_data_pos, train_data_neg)
-    val_inc_pos, val_inc_neg, val_lab_pos, val_lab_neg = build_incidence_matrix(val_data_pos, val_data_neg)
-    test_inc_pos, test_inc_neg, test_lab_pos, test_lab_neg = build_incidence_matrix(test_data_pos, test_data_neg)
-    
-    extra_feature = torch.zeros((num_drugs, 768), dtype=torch.float32)
-    for drug, idx in drug_to_index.items():
-        extra_feature[idx] = drug_embeddings_dict[drug]
-        
-    train_inc = torch.tensor(np.concatenate([train_inc_pos, train_inc_neg], axis=1), dtype=torch.float32)
-    train_lab = torch.tensor(np.concatenate([train_lab_pos, train_lab_neg]), dtype=torch.float32)
-    
-    val_inc = torch.tensor(np.concatenate([val_inc_pos, val_inc_neg], axis=1), dtype=torch.float32)
-    val_lab = np.concatenate([val_lab_pos, val_lab_neg])
-    
-    test_inc = torch.tensor(np.concatenate([test_inc_pos, test_inc_neg], axis=1), dtype=torch.float32)
-    test_lab = np.concatenate([test_lab_pos, test_lab_neg])
-    
+    train_pos, train_neg = merge_quarters(['2015Q1', '2015Q2', '2015Q3', '2016Q4', '2017Q1', '2017Q2', '2017Q3', '2017Q4', '2018Q3', '2019Q1', '2019Q2', '2019Q3', '2019Q4', '2020Q1', '2020Q2', '2020Q3', '2020Q4', '2021Q1', '2021Q3', '2021Q4', '2022Q1', '2022Q2', '2022Q3', '2022Q4', '2023Q1', '2023Q2', '2023Q3', '2023Q4', '2024Q2'])
+    val_pos, val_neg = merge_quarters(['2014Q3', '2015Q4', '2016Q1', '2016Q3', '2021Q2', '2024Q1'])
+    test_pos, test_neg = merge_quarters(['2014Q4', '2016Q2', '2018Q1', '2018Q2', '2018Q4', '2024Q3'])
+
+    train_inc_pos, train_inc_neg, train_lpos, train_lneg = build_incidence_pair(train_pos, train_neg)
+    val_inc_pos, val_inc_neg, val_lpos, val_lneg = build_incidence_pair(val_pos, val_neg)
+    test_inc_pos, test_inc_neg, test_lpos, test_lneg = build_incidence_pair(test_pos, test_neg)
+
     return {
-        'train_inc': train_inc,
-        'train_lab': train_lab,
-        'val_inc': val_inc,
-        'val_lab': val_lab,
-        'test_inc': test_inc,
-        'test_lab': test_lab,
-        'drug_features': extra_feature.to(device),
-        'num_drugs': num_drugs
+        'train_inc_pos': torch.tensor(train_inc_pos, dtype=torch.float32).to(device),
+        'train_inc_all': torch.tensor(np.concatenate([train_inc_pos, train_inc_neg], axis=1), dtype=torch.float32),
+        'y_train_all': torch.tensor(np.concatenate([train_lpos, train_lneg]), dtype=torch.float32).to(device),
+        'val_inc_all': torch.tensor(np.concatenate([val_inc_pos, val_inc_neg], axis=1), dtype=torch.float32).to(device),
+        'y_val_all': np.concatenate([val_lpos, val_lneg]),
+        'test_inc_all': torch.tensor(np.concatenate([test_inc_pos, test_inc_neg], axis=1), dtype=torch.float32).to(device),
+        'y_test_all': np.concatenate([test_lpos, test_lneg]),
+        'drug_features': extra_feature,
+        'num_drugs': num_drugs,
     }
 
-def evaluate_dataset(model, drug_features, inc_matrix, labels, device, batch_size=512):
+def evaluate(model, drug_features, struct_features, inc_matrix, labels, device, threshold=0.5, batch_size=512):
     model.eval()
     all_scores = []
-    num_edges = inc_matrix.shape[1]
-    
     with torch.no_grad():
-        for i in range(0, num_edges, batch_size):
+        for i in range(0, inc_matrix.shape[1], batch_size):
             batch_inc = inc_matrix[:, i:i+batch_size].to(device)
-            logits = model(drug_features, batch_inc)
-            probs = torch.sigmoid(logits).cpu().numpy()
-            all_scores.append(probs)
-            
+            logits = model(drug_features, struct_features, batch_inc)
+            all_scores.append(torch.sigmoid(logits).cpu().numpy())
     all_scores = np.concatenate(all_scores, axis=0)
-    binary_preds = (all_scores >= 0.5).astype(int)
-    
-    pr = precision_score(labels, binary_preds, zero_division=0)
-    re = recall_score(labels, binary_preds, zero_division=0)
-    f1 = f1_score(labels, binary_preds, zero_division=0)
-    auc = roc_auc_score(labels, all_scores)
-    prauc = average_precision_score(labels, all_scores)
-    
-    return {
-        'precision': pr,
-        'recall': re,
-        'f1': f1,
-        'auc': auc,
-        'prauc': prauc,
-        'scores': all_scores
-    }
+    preds = (all_scores >= threshold).astype(int)
+    return f1_score(labels, preds, zero_division=0), roc_auc_score(labels, all_scores), average_precision_score(labels, all_scores), precision_score(labels, preds, zero_division=0), recall_score(labels, preds, zero_division=0), all_scores
 
-def main():
-    parser = argparse.ArgumentParser(description="HyperAttDDI without SE (Exp B)")
-    parser.add_argument('--lr', type=float, default=0.0005, help="Learning rate")
-    parser.add_argument('--weight_decay', type=float, default=0.001, help="Weight decay")
-    parser.add_argument('--epochs', type=int, default=100, help="Training epochs")
-    parser.add_argument('--batch_size', type=int, default=64, help="Batch size")
-    parser.add_argument('--eval_batch_size', type=int, default=512, help="Eval batch size")
-    parser.add_argument('--emb_dim', type=int, default=256, help="Drug projection embedding dimension")
-    parser.add_argument('--conv_dim', type=int, default=64, help="Hypergraph conv dimension per head")
-    parser.add_argument('--heads', type=int, default=4, help="Attention heads")
-    parser.add_argument('--d', type=int, default=64, help="Attention query/key dimension")
-    parser.add_argument('--dropout', type=float, default=0.1, help="Dropout probability")
-    parser.add_argument('--seed', type=int, default=42, help="Random seed")
-    parser.add_argument('--output_dir', type=str, default='output_hyperattddi_b', help="Output directory")
-    args, _ = parser.parse_known_args()
-    
-    set_random_seed(args.seed)
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
+    data = load_data(device)
     
-    base_path = find_dataset_path()
-    print(f"Dataset root found: {base_path}")
+    seeds = [42, 3407, 54321, 123456, 7, 777, 31415]
+    metrics = {"f1": [], "auc": [], "prauc": [], "pr": [], "re": []}
     
-    data = load_data(base_path, device)
-    drug_features = data['drug_features']
-    train_inc = data['train_inc']
-    y_train = data['train_lab']
-    
-    os.makedirs(args.output_dir, exist_ok=True)
-    
-    model = HyperAttDDI_NoSE(
-        in_dim=768,
-        emb_dim=args.emb_dim,
-        conv_dim=args.conv_dim,
-        heads=args.heads,
-        d=args.d,
-        p=args.dropout
-    ).to(device)
-    
-    model.apply(init_weights)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    criterion = nn.BCEWithLogitsLoss()
-    
-    print(f"\nModel initialized: {sum(p.numel() for p in model.parameters() if p.requires_grad)} trainable parameters.")
-    print("Starting training (HyperAttDDI without SE - Exp B)...\n")
-    
-    max_valid_f1 = 0.0
-    best_epoch = -1
-    best_metrics = None
-    best_weights = None
-    
-    num_samples = train_inc.shape[1]
-    num_batches = num_samples // args.batch_size
-    
-    for epoch in range(args.epochs):
-        model.train()
-        epoch_loss = 0.0
+    for seed in seeds:
+        print(f"\n--- Running Seed {seed} ---")
+        set_random_seed(seed)
         
-        # Shuffle training incidence columns
-        indices = torch.randperm(num_samples)
-        shuffled_train_inc = train_inc[:, indices]
-        shuffled_y_train = y_train[indices]
+        model = HyperAttDDI_NoSE(
+            struct_dim=data['train_inc_pos'].shape[1],
+            in_dim=768, emb_dim=256, conv_dim=64, heads=4, d=64, p=0.1
+        ).to(device)
         
-        pbar = tqdm(range(num_batches), desc=f"Epoch {epoch+1:03d}/{args.epochs:03d}", leave=False)
-        for b in pbar:
-            optimizer.zero_grad()
-            batch_inc = shuffled_train_inc[:, b * args.batch_size:(b + 1) * args.batch_size].to(device)
-            batch_y = shuffled_y_train[b * args.batch_size:(b + 1) * args.batch_size].to(device)
+        if seed == seeds[0]:
+            print(f"Total Trainable Parameters (Exp B): {count_parameters(model):,}")
             
-            logits = model(drug_features, batch_inc)
-            loss = criterion(logits, batch_y)
-            loss.backward()
-            optimizer.step()
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.0005, weight_decay=0.001)
+        
+        class FocalLoss(nn.Module):
+            def __init__(self, alpha=1, gamma=2.0, reduction='mean'):
+                super(FocalLoss, self).__init__()
+                self.alpha = alpha
+                self.gamma = gamma
+                self.reduction = reduction
+            def forward(self, inputs, targets):
+                bce_loss = F.binary_cross_entropy_with_logits(inputs, targets.float(), reduction='none')
+                pt = torch.exp(-bce_loss)
+                focal_loss = self.alpha * (1 - pt) ** self.gamma * bce_loss
+                if self.reduction == 'mean': return focal_loss.mean()
+                return focal_loss.sum()
+                
+        criterion = FocalLoss(gamma=2.0)
+        
+        best_f1, best_state, best_thresh = 0, None, 0.5
+        
+        for epoch in tqdm(range(100), desc="Training"):
+            model.train()
+            generator = torch.Generator().manual_seed(seed)
+            perm = torch.randperm(data['train_inc_all'].shape[1], generator=generator)
+            train_inc = data['train_inc_all'][:, perm]
+            y_train = data['y_train_all'][perm]
             
-            epoch_loss += loss.item()
-            pbar.set_postfix({'loss': f"{loss.item():.4f}"})
+            for i in range(0, train_inc.shape[1], 64):
+                batch_inc = train_inc[:, i:i+64].to(device)
+                batch_y = y_train[i:i+64]
+                
+                optimizer.zero_grad()
+                logits = model(data['drug_features'], data['train_inc_pos'], batch_inc)
+                loss = criterion(logits, batch_y)
+                loss.backward()
+                optimizer.step()
+                
+            _, _, _, _, _, val_scores = evaluate(model, data['drug_features'], data['train_inc_pos'], data['val_inc_all'], data['y_val_all'], device)
             
-        avg_loss = epoch_loss / num_batches
-        
-        # Validation
-        val_res = evaluate_dataset(
-            model, drug_features, data['val_inc'], data['val_lab'], device, batch_size=args.eval_batch_size
-        )
-        
-        val_f1 = val_res['f1']
-        val_auc = val_res['auc']
-        
-        print(f"Epoch {epoch+1:03d} | Loss: {avg_loss:.4f} | Val F1: {val_f1:.4f} | Val AUC: {val_auc:.4f} | Val Precision: {val_res['precision']:.4f} | Val Recall: {val_res['recall']:.4f}")
-        
-        if val_f1 > max_valid_f1:
-            max_valid_f1 = val_f1
-            best_epoch = epoch + 1
-            best_metrics = val_res
-            best_weights = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-            torch.save(best_weights, os.path.join(args.output_dir, 'best_hyperattddi_exp_b.pt'))
-            print(f"  --> Saved new best model checkpoint (Val F1: {val_f1:.4f})")
+            best_epoch_thresh = 0.5
+            best_epoch_f1 = 0.0
+            for thresh in np.arange(0.1, 0.9, 0.02):
+                b_score = (val_scores >= thresh).astype(int)
+                f1 = f1_score(data['y_val_all'], b_score, zero_division=0)
+                if f1 > best_epoch_f1:
+                    best_epoch_f1 = f1
+                    best_epoch_thresh = thresh
             
-    print(f"\n=======================================================")
-    print(f"Training Complete. Best Validation F1: {max_valid_f1:.4f} (Epoch {best_epoch})")
-    print(f"Loading best checkpoint for Final Test Evaluation...")
-    print(f"=======================================================")
-    
-    model.load_state_dict(best_weights)
-    model.to(device)
-    
-    test_res = evaluate_dataset(
-        model, drug_features, data['test_inc'], data['test_lab'], device, batch_size=args.eval_batch_size
-    )
-    
-    print("\n--- Final Test Results (HyperAttDDI without SE - Exp B) ---")
-    print(f"Precision: {test_res['precision']:.4f}")
-    print(f"Recall:    {test_res['recall']:.4f}")
-    print(f"F1 Score:  {test_res['f1']:.4f}")
-    print(f"AUC:       {test_res['auc']:.4f}")
-    print(f"PRAUC:     {test_res['prauc']:.4f}")
-    print("-----------------------------------------------------------\n")
-    
-    # Save results summary
-    res_df = pd.DataFrame([{
-        'Model': 'HyperAttDDI (Exp B - No SE)',
-        'Precision': test_res['precision'],
-        'Recall': test_res['recall'],
-        'F1': test_res['f1'],
-        'AUC': test_res['auc'],
-        'PRAUC': test_res['prauc'],
-        'Best_Epoch': best_epoch,
-        'Best_Val_F1': max_valid_f1
-    }])
-    res_df.to_csv(os.path.join(args.output_dir, 'exp_b_results.csv'), index=False)
-    print(f"Results saved to: {os.path.join(args.output_dir, 'exp_b_results.csv')}")
+            if best_epoch_f1 > best_f1:
+                best_f1 = best_epoch_f1
+                best_thresh = best_epoch_thresh
+                best_state = copy.deepcopy(model.state_dict())
+                
+        model.load_state_dict(best_state)
+        f1, auc, prauc, pr, re, _ = evaluate(model, data['drug_features'], data['train_inc_pos'], data['test_inc_all'], data['y_test_all'], device, threshold=best_thresh)
+        
+        metrics["f1"].append(f1)
+        metrics["auc"].append(auc)
+        metrics["prauc"].append(prauc)
+        metrics["pr"].append(pr)
+        metrics["re"].append(re)
+        print(f"Seed {seed} Test -> AUC: {auc:.4f} | PR-AUC: {prauc:.4f} | F1: {f1:.4f} | PR: {pr:.4f} | RE: {re:.4f}")
 
-if __name__ == '__main__':
-    main()
+    print("\nFINAL EXP B RESULTS (7 Seeds):")
+    for k, v in metrics.items():
+        print(f"{k.upper()}: {np.mean(v):.4f} ± {np.std(v):.4f}")
