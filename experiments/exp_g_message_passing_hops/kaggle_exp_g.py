@@ -105,30 +105,98 @@ class HyperAttDDI_HopAblation(nn.Module):
         return logits
 
 def find_file(filename, search_roots=['/kaggle/input', '/kaggle/working', '.', '..', '../..', 'dataset']):
+    norm_fn = filename.lower().replace(' ', '_').replace('-', '_')
     for root_dir in search_roots:
         if os.path.exists(root_dir):
             for root, dirs, files in os.walk(root_dir):
-                if filename in files:
-                    return os.path.join(root, filename)
+                for f in files:
+                    if f == filename or f.lower() == filename.lower():
+                        return os.path.join(root, f)
+                    f_norm = f.lower().replace(' ', '_').replace('-', '_')
+                    if f_norm == norm_fn:
+                        return os.path.join(root, f)
+                    if 'drugbank' in f.lower() and 'smile' in f.lower() and f.endswith('.csv'):
+                        return os.path.join(root, f)
     return None
 
 def find_dir(dirname, search_roots=['/kaggle/input', '.', '..', '../..', 'dataset']):
+    norm_dn = dirname.lower().replace(' ', '_').replace('-', '_')
     for root_dir in search_roots:
         if os.path.exists(root_dir):
             for root, dirs, files in os.walk(root_dir):
-                if dirname in dirs:
-                    return os.path.join(root, dirname)
+                for d in dirs:
+                    if d == dirname or d.lower() == dirname.lower():
+                        return os.path.join(root, d)
+                    d_norm = d.lower().replace(' ', '_').replace('-', '_')
+                    if d_norm == norm_dn:
+                        return os.path.join(root, d)
+                    if 'subset_drug' in d.lower() or 'drug2-8' in d.lower():
+                        return os.path.join(root, d)
     return None
+
+def list_kaggle_inputs():
+    all_found = []
+    if os.path.exists('/kaggle/input'):
+        for root, dirs, files in os.walk('/kaggle/input'):
+            for f in files:
+                all_found.append(os.path.join(root, f))
+    return all_found
 
 def load_data(device):
     subset_dir = find_dir('subset_drug2-8_SE5-50')
+    if subset_dir is None:
+        inputs = list_kaggle_inputs()
+        raise FileNotFoundError(
+            f"Could not find dataset directory 'subset_drug2-8_SE5-50'.\n"
+            f"Please ensure you added the HODDI dataset to your Kaggle Notebook under '+ Add Input'.\n"
+            f"Files currently in /kaggle/input:\n" + "\n".join(inputs[:20])
+        )
+        
     dict_path = find_file('Drugbank_ID_SMILE_all_structure links.csv')
+    if dict_path is None:
+        inputs = list_kaggle_inputs()
+        raise FileNotFoundError(
+            f"Could not find SMILES links dictionary 'Drugbank_ID_SMILE_all_structure links.csv'.\n"
+            f"Please ensure the SMILES dataset is added to your Kaggle Notebook inputs.\n"
+            f"Files currently in /kaggle/input:\n" + "\n".join(inputs[:20])
+        )
+        
+    print(f"Found SMILES dictionary: {dict_path}")
+    print(f"Found subset directory: {subset_dir}")
     smiles_ds = pd.read_csv(dict_path)
     drugbank_to_smiles = smiles_ds.set_index('DrugBank ID')['SMILES'].to_dict()
 
-    merged_dir = os.path.join(subset_dir, 'merged_subset')
-    all_ds = pd.concat([pd.read_csv(os.path.join(merged_dir, 'positive_samples_2014Q3_2024Q3_step6.csv')), 
-                        pd.read_csv(os.path.join(merged_dir, 'negative_samples_2014Q3_2024Q3_step6.csv'))], axis=0)
+    def merge_quarters(sub_datasets):
+        pos_merged, neg_merged = [], []
+        for sub_ds in sub_datasets:
+            pos_name = f'{sub_ds}_positive_samples_condition123_SE_above_0.9.csv'
+            neg_name = f'{sub_ds}_negative_samples_condition123_SE_above_0.9.csv'
+            
+            # Check subset_dir or global find_file
+            pos_p = os.path.join(subset_dir, pos_name)
+            if not os.path.exists(pos_p): pos_p = find_file(pos_name)
+            neg_p = os.path.join(subset_dir, neg_name)
+            if not os.path.exists(neg_p): neg_p = find_file(neg_name)
+            
+            if pos_p and os.path.exists(pos_p): pos_merged.append(pd.read_csv(pos_p))
+            if neg_p and os.path.exists(neg_p): neg_merged.append(pd.read_csv(neg_p))
+            
+        pos_df = pd.concat(pos_merged, axis=0) if len(pos_merged) > 0 else pd.DataFrame()
+        neg_df = pd.concat(neg_merged, axis=0) if len(neg_merged) > 0 else pd.DataFrame()
+        return pos_df, neg_df
+
+    train_quarters = ['2015Q1', '2015Q2', '2015Q3', '2016Q4', '2017Q1', '2017Q2', '2017Q3', '2017Q4', '2018Q3', '2019Q1', '2019Q2', '2019Q3', '2019Q4', '2020Q1', '2020Q2', '2020Q3', '2020Q4', '2021Q1', '2021Q3', '2021Q4', '2022Q1', '2022Q2', '2022Q3', '2022Q4', '2023Q1', '2023Q2', '2023Q3', '2023Q4', '2024Q2']
+    val_quarters = ['2014Q3', '2015Q4', '2016Q1', '2016Q3', '2021Q2', '2024Q1']
+    test_quarters = ['2014Q4', '2016Q2', '2018Q1', '2018Q2', '2018Q4', '2024Q3']
+
+    print("Loading quarterly CSV files...")
+    train_pos, train_neg = merge_quarters(train_quarters)
+    val_pos, val_neg = merge_quarters(val_quarters)
+    test_pos, test_neg = merge_quarters(test_quarters)
+
+    # Build drug universe from all available quarter splits
+    all_sample_dfs = [df for df in [train_pos, train_neg, val_pos, val_neg, test_pos, test_neg] if not df.empty]
+    all_ds = pd.concat(all_sample_dfs, axis=0)
 
     all_drugs = set()
     for drug_ids in all_ds['DrugBankID']:
@@ -142,23 +210,51 @@ def load_data(device):
     drug_id_list = [did for did in raw_drug_id_list if did in drugbank_to_smiles]
     drug_to_index = {did: idx for idx, did in enumerate(drug_id_list)}
     num_drugs = len(drug_id_list)
+    print(f"Total drugs after SMILES filtering: {num_drugs}")
 
+    emb_path = find_file('drug_embeddings_768d.pt')
     cache_path = '/kaggle/working/drug_embeddings_768d_author_padded_10250.pt'
+    
     if os.path.exists(cache_path):
         print(f"Loading cached author-padded embeddings from: {cache_path}")
         extra_feature = torch.load(cache_path, map_location=device)
+    elif emb_path and os.path.exists(emb_path):
+        print(f"Loading pre-computed drug embeddings from: {emb_path}")
+        raw_emb = torch.load(emb_path, map_location='cpu')
+        if isinstance(raw_emb, dict):
+            extra_feature = torch.zeros((num_drugs, 768), dtype=torch.float32)
+            for idx, did in enumerate(drug_id_list):
+                if did in raw_emb:
+                    extra_feature[idx] = raw_emb[did] if torch.is_tensor(raw_emb[did]) else torch.tensor(raw_emb[did])
+            extra_feature = extra_feature.to(device)
+        elif torch.is_tensor(raw_emb) and raw_emb.shape[0] == num_drugs:
+            extra_feature = raw_emb.to(device)
+        else:
+            extra_feature = None
     else:
+        extra_feature = None
+
+    if extra_feature is None:
         print("Computing author-identical ChemBERTa embeddings on GPU (takes ~45s)...")
         from transformers import AutoModelForMaskedLM, AutoTokenizer
         m_name = 'seyonec/PubChem10M_SMILES_BPE_450k'
         local_dir = find_dir('PubChem10M_SMILES_BPE_450k')
         if local_dir:
             m_name = local_dir
-        tokenizer = AutoTokenizer.from_pretrained(m_name)
+            
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(m_name, use_fast=True)
+        except Exception:
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(m_name, use_fast=False)
+            except Exception:
+                from transformers import RobertaTokenizerFast
+                tokenizer = RobertaTokenizerFast.from_pretrained(m_name)
+                
         chem_model = AutoModelForMaskedLM.from_pretrained(m_name).to(device)
         chem_model.eval()
 
-        smiles_list = [str(drugbank_to_smiles[did]) for did in drug_id_list]
+        smiles_list = [str(drugbank_to_smiles.get(did, '')) for did in drug_id_list]
         chemberta_feat = []
         batch_size = 64
         with torch.no_grad():
@@ -173,15 +269,6 @@ def load_data(device):
             torch.save(extra_feature, cache_path)
         except Exception:
             pass
-
-    def merge_quarters(sub_datasets):
-        pos_merged, neg_merged = [], []
-        for sub_ds in sub_datasets:
-            pos_f = os.path.join(subset_dir, f'{sub_ds}_positive_samples_condition123_SE_above_0.9.csv')
-            neg_f = os.path.join(subset_dir, f'{sub_ds}_negative_samples_condition123_SE_above_0.9.csv')
-            if os.path.exists(pos_f): pos_merged.append(pd.read_csv(pos_f))
-            if os.path.exists(neg_f): neg_merged.append(pd.read_csv(neg_f))
-        return pd.concat(pos_merged, axis=0), pd.concat(neg_merged, axis=0)
 
     def build_incidence_pair(pos_df, neg_df):
         num_pos, num_neg = len(pos_df), len(neg_df)
@@ -320,7 +407,7 @@ def main():
     parser.add_argument('--lr', type=float, default=0.0005, help="Learning rate (matches Exp B)")
     parser.add_argument('--weight_decay', type=float, default=0.001, help="Weight decay (matches Exp B)")
     parser.add_argument('--seed', type=int, default=42, help="Random seed")
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")

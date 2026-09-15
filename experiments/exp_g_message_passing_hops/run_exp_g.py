@@ -348,7 +348,7 @@ def main():
     parser.add_argument('--val_every', type=int, default=5, help="Validate every N epochs")
     parser.add_argument('--data_dir', type=str, default=None, help="Path to data directory")
     parser.add_argument('--plot_only', action='store_true', help="Only regenerate plot from hop_comparison_metrics.csv")
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
     
     if args.plot_only:
         if os.path.exists('hop_comparison_metrics.csv'):
