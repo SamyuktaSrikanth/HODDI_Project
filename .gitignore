@@ -29,7 +29,7 @@ wheels/
 *.ipynb_checkpoints/
 .virtual_documents/
 
-# Checkpoints and logs
+# Checkpoints, large weights and models
 output_*/
 logs/
 runs/
@@ -37,12 +37,11 @@ wandb/
 *.log
 *.ckpt
 *.onnx
+*.pt
 *.pt.tmp
-
-# Ignore general checkpoints but preserve precomputed dataset embeddings in data/
 checkpoints/
 best_*.pt
-!data/*.pt
+best_model_*/
 
 # IDE & OS Specific
 .vscode/
