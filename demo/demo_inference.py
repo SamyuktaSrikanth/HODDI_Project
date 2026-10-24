@@ -9,14 +9,19 @@ import io
 import zipfile
 import pandas as pd
 
-# Add the model to the path so we can import it
-sys.path.append(os.path.join(os.path.dirname(__file__), 'experiments', 'exp_b_hyperattddi_no_se'))
+# Add the current directory and parent directory to the path so we can import models
+sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'experiments', 'exp_b_hyperattddi_no_se'))
 
 try:
-    from kaggle_exp_b import HyperAttDDI_NoSE
+    from kaggle_train_and_save_weights import HyperAttDDI_NoSE
 except ImportError:
-    print("Please run this script from the HODDI_Project folder.")
-    sys.exit(1)
+    try:
+        from kaggle_exp_b import HyperAttDDI_NoSE
+    except ImportError:
+        print("Please ensure kaggle_train_and_save_weights.py is available in the demo folder.")
+        sys.exit(1)
 
 def load_weights_safe(model_path, map_location='cpu'):
     """
@@ -193,7 +198,10 @@ if __name__ == "__main__":
     parser.add_argument("--drug1", type=str, default=None, help="Optional legacy DrugBank ID 1")
     parser.add_argument("--drug2", type=str, default=None, help="Optional legacy DrugBank ID 2")
     parser.add_argument("--drug3", type=str, default=None, help="Optional legacy DrugBank ID 3")
-    parser.add_argument("--weights", type=str, default="best_model_seed3407", help="Path to trained weights (.pt or directory)")
+    default_weights = os.path.join(os.path.dirname(__file__), "best_model_seed3407")
+    if not os.path.exists(default_weights) and os.path.exists(default_weights + ".pt"):
+        default_weights = default_weights + ".pt"
+    parser.add_argument("--weights", type=str, default=default_weights, help="Path to trained weights (.pt or directory)")
     args = parser.parse_args()
     
     # Allow comma-separated strings or legacy args
