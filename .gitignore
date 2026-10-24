@@ -45,6 +45,7 @@ best_model_*/
 
 # Large binary datasets and document folders
 papers/
+papers for literature survey/
 data/
 
 # IDE & OS Specific
