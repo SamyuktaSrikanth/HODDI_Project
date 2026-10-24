@@ -206,9 +206,7 @@ HODDI_Project/
 │   ├── exp_a_b_master_eval/               # Exp A (Baseline) & Exp B (Base) Master Evaluation
 │   ├── exp_c_hyperattddi_se/              # Exp C: SE-Conditioned Attention Pooling
 │   ├── exp_d_hyperattddi_bio/             # Exp D: Multimodal Biological Feature Fusion
-│   ├── exp_e_mean_pool_ablation/          # Exp E: Mean Pooling Ablation
-│   ├── exp_f_stratified_k/                # Exp F: Interaction Order Stratification
-│   └── exp_g_message_passing_hops/        # Exp G: Message-Passing Depth Ablation
+│   └── exp_e_message_passing_hops/        # Exp E: Message-Passing Depth & Hop Optimization
 ├── demo/                                  # Interactive polypharmacy CLI demo & weights
 ├── results/                               # 7-Seed benchmark results master & charts
 ├── docs/                                  # Research manuscript and blueprints

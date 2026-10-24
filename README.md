@@ -207,7 +207,7 @@ HODDI_Project/
 │   ├── kaggle_train_and_save_weights.py       # Standalone training script to produce weights
 │   └── best_model_seed3407/                   # PyTorch checkpoint & feature metadata
 │
-├── experiments/                               # Self-contained experimental suites (A through G)
+├── experiments/                               # Self-contained experimental suites (A through E)
 │   ├── exp_a_b_master_eval/                   # Exp A (Baseline) & Exp B (Base) 7-seed evaluation
 │   │   └── kaggle_master_evaluation.ipynb
 │   ├── exp_c_hyperattddi_se/                  # Exp C: HyperAttDDI-SE core model + 7,350 MedDRA screening
@@ -215,15 +215,8 @@ HODDI_Project/
 │   ├── exp_d_hyperattddi_bio/                 # Exp D: Multimodal biological feature fusion
 │   │   ├── exp_d.ipynb
 │   │   └── 03_kaggle_exp_d_multimodal_bio.ipynb
-│   ├── exp_e_mean_pool_ablation/              # Exp E: Mean vs attention pooling ablation study
-│   │   └── 04_kaggle_exp_e_mean_pool_ablation.ipynb
-│   ├── exp_f_stratified_k/                    # Exp F: Stratified evaluation across k = 2..8 drugs
-│   │   └── 05_kaggle_exp_f_stratified_eval.ipynb
-│   └── exp_g_message_passing_hops/            # Exp G: Hypergraph message-passing depth (L = 1..4)
-│       ├── kaggle_exp_g.ipynb
-│       ├── exp-e-hoddi.ipynb                      # Executed Kaggle run with cell outputs
-│       ├── kaggle_exp_g.py
-│       └── run_exp_g.py
+│   └── exp_e_message_passing_hops/            # Exp E: Hypergraph message-passing depth & hop optimization
+│       └── exp-e-hoddi.ipynb
 │
 ├── results/                                   # Final publication artifacts & evaluation metrics
 │   ├── results.pdf                            # 4-page executive 7-seed results master

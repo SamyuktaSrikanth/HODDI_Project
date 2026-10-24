@@ -155,4 +155,4 @@ Use this audit table to answer any panel question on where a specific number ori
 | **Exp D (7 Seeds)** | `exp_d.ipynb` | `experiments/exp_d_hyperattddi_bio/` | Kaggle T4 GPU |
 | **Exp C Screening & Dual-Threshold** | `README.md` | `HODDI_Project/README.md` | Kaggle T4 GPU |
 | **Exp D Standalone & Modality** | `03_kaggle_exp_d_multimodal_bio.ipynb` & logs | `experiments/exp_d_hyperattddi_bio/` | Kaggle T4 GPU |
-| **Exp G (Hops 1 to 4)** | `hop_comparison_metrics.csv` | `experiments/exp_g_message_passing_hops/` | Kaggle T4 GPU |
+| **Exp E (Hops 1 to 4)** | `exp-e-hoddi.ipynb` | `experiments/exp_e_message_passing_hops/` | Kaggle T4 GPU |
