@@ -215,7 +215,7 @@ HODDI_Project/
 │   ├── exp_c_hyperattddi_se/                  # Exp C: HyperAttDDI-SE core model + 7,350 MedDRA screening
 │   │   └── kaggle_exp_c_full_screening.ipynb
 │   ├── exp_d_hyperattddi_bio/                 # Exp D: Multimodal biological feature fusion
-│   │   ├── kaggle_exp_d_7seeds.ipynb
+│   │   ├── exp_d.ipynb
 │   │   └── 03_kaggle_exp_d_multimodal_bio.ipynb
 │   ├── exp_e_mean_pool_ablation/              # Exp E: Mean vs attention pooling ablation study
 │   │   └── 04_kaggle_exp_e_mean_pool_ablation.ipynb

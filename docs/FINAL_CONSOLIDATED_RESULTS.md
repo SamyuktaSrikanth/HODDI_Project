@@ -152,7 +152,7 @@ Use this audit table to answer any panel question on where a specific number ori
 | :--- | :--- | :--- | :--- |
 | **Exp A vs Exp B (7 Seeds)** | `kaggle_master_evaluation.ipynb` | `experiments/exp_b_hyperattddi_base/` | Kaggle T4 GPU |
 | **Exp C (7 Seeds)** | `kaggle_exp_c_full_screening.ipynb` | `experiments/exp_c_hyperattddi_se/` | Kaggle T4 GPU |
-| **Exp D (7 Seeds)** | `kaggle_exp_d_7seeds.ipynb` | `experiments/exp_d_hyperattddi_bio/` | Kaggle T4 GPU |
+| **Exp D (7 Seeds)** | `exp_d.ipynb` | `experiments/exp_d_hyperattddi_bio/` | Kaggle T4 GPU |
 | **Exp C Screening & Dual-Threshold** | `README.md` | `HODDI_Project/README.md` | Kaggle T4 GPU |
 | **Exp D Standalone & Modality** | `03_kaggle_exp_d_multimodal_bio.ipynb` & logs | `experiments/exp_d_hyperattddi_bio/` | Kaggle T4 GPU |
 | **Exp G (Hops 1 to 4)** | `hop_comparison_metrics.csv` | `experiments/exp_g_message_passing_hops/` | Kaggle T4 GPU |
