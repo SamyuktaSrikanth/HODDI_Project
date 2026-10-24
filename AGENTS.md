@@ -35,9 +35,8 @@ When writing paper text, methodology, comparative tables, or statistical analyse
 ## 3. Active Production Experiments to Reference
 
 When describing code reproduction, pipeline architecture, or specific ablations, reference ONLY:
-1. **Exp A (7-Seed Baseline Evaluation):** [`experiments/exp_a_baseline_hgnn/kaggle_master_evaluation.ipynb`](experiments/exp_a_baseline_hgnn/kaggle_master_evaluation.ipynb)
-2. **Exp B (7-Seed Base Model Evaluation):** [`experiments/exp_b_hyperattddi_base/kaggle_master_evaluation.ipynb`](experiments/exp_b_hyperattddi_base/kaggle_master_evaluation.ipynb)
-3. **Exp C (Core Model + 7,350 MedDRA Screening Engine):** [`experiments/exp_c_hyperattddi_se/kaggle_exp_c_full_screening.ipynb`](experiments/exp_c_hyperattddi_se/kaggle_exp_c_full_screening.ipynb)
+1. **Exp A & Exp B (7-Seed Master Evaluation):** [`experiments/exp_a_b_master_eval/kaggle_master_evaluation.ipynb`](experiments/exp_a_b_master_eval/kaggle_master_evaluation.ipynb)
+2. **Exp C (Core Model + 7,350 MedDRA Screening Engine):** [`experiments/exp_c_hyperattddi_se/kaggle_exp_c_full_screening.ipynb`](experiments/exp_c_hyperattddi_se/kaggle_exp_c_full_screening.ipynb)
 4. **Exp D (Multimodal Biological Fusion - 7 Seeds):** [`experiments/exp_d_hyperattddi_bio/exp_d.ipynb`](experiments/exp_d_hyperattddi_bio/exp_d.ipynb)
 5. **Exp D Modality Gating Weights ($\alpha_{smiles}$ vs. $\alpha_{bio}$):** [`experiments/exp_d_hyperattddi_bio/03_kaggle_exp_d_multimodal_bio.ipynb`](experiments/exp_d_hyperattddi_bio/03_kaggle_exp_d_multimodal_bio.ipynb)
 6. **Exp E (Attention Pooling vs. Mean Pooling):** [`experiments/exp_e_mean_pool_ablation/04_kaggle_exp_e_mean_pool_ablation.ipynb`](experiments/exp_e_mean_pool_ablation/04_kaggle_exp_e_mean_pool_ablation.ipynb)

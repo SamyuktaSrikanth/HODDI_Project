@@ -208,9 +208,7 @@ HODDI_Project/
 │   └── best_model_seed3407/                   # PyTorch checkpoint & feature metadata
 │
 ├── experiments/                               # Self-contained experimental suites (A through G)
-│   ├── exp_a_baseline_hgnn/                   # Exp A: HGNN-SA baseline reproduction (7 seeds)
-│   │   └── kaggle_master_evaluation.ipynb
-│   ├── exp_b_hyperattddi_base/                # Exp B: HyperAttDDI base model (7 seeds)
+│   ├── exp_a_b_master_eval/                   # Exp A (Baseline) & Exp B (Base) 7-seed evaluation
 │   │   └── kaggle_master_evaluation.ipynb
 │   ├── exp_c_hyperattddi_se/                  # Exp C: HyperAttDDI-SE core model + 7,350 MedDRA screening
 │   │   └── kaggle_exp_c_full_screening.ipynb
@@ -223,6 +221,7 @@ HODDI_Project/
 │   │   └── 05_kaggle_exp_f_stratified_eval.ipynb
 │   └── exp_g_message_passing_hops/            # Exp G: Hypergraph message-passing depth (L = 1..4)
 │       ├── kaggle_exp_g.ipynb
+│       ├── exp-e-hoddi.ipynb                      # Executed Kaggle run with cell outputs
 │       ├── kaggle_exp_g.py
 │       └── run_exp_g.py
 │

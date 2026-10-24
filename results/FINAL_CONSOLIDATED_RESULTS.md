@@ -150,7 +150,7 @@ Use this audit table to answer any panel question on where a specific number ori
 
 | Experiment / Metric Group | Originating File | Repository Location | Execution Environment |
 | :--- | :--- | :--- | :--- |
-| **Exp A vs Exp B (7 Seeds)** | `kaggle_master_evaluation.ipynb` | `experiments/exp_b_hyperattddi_base/` | Kaggle T4 GPU |
+| **Exp A vs Exp B (7 Seeds)** | `kaggle_master_evaluation.ipynb` | `experiments/exp_a_b_master_eval/` | Kaggle T4 GPU |
 | **Exp C (7 Seeds)** | `kaggle_exp_c_full_screening.ipynb` | `experiments/exp_c_hyperattddi_se/` | Kaggle T4 GPU |
 | **Exp D (7 Seeds)** | `exp_d.ipynb` | `experiments/exp_d_hyperattddi_bio/` | Kaggle T4 GPU |
 | **Exp C Screening & Dual-Threshold** | `README.md` | `HODDI_Project/README.md` | Kaggle T4 GPU |
