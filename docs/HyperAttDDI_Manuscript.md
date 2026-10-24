@@ -204,13 +204,16 @@ HODDI_Project/
 │       └── subset_drug2-8_SE5-50/          # 41 quarterly FAERS positive/negative files
 ├── experiments/
 │   ├── exp_a_baseline_hgnn/               # Exp A: HGNN-SA Baseline reproduction
-│   ├── exp_b_hyperattddi_no_se/           # Exp B: HyperAttDDI Architecture (No SE)
+│   ├── exp_b_hyperattddi_base/            # Exp B: HyperAttDDI Architecture (No SE)
 │   ├── exp_c_hyperattddi_se/              # Exp C: SE-Conditioned Attention Pooling
 │   ├── exp_d_hyperattddi_bio/             # Exp D: Multimodal Biological Feature Fusion
 │   ├── exp_e_mean_pool_ablation/          # Exp E: Mean Pooling Ablation
-│   └── exp_f_stratified_k/                # Exp F: Interaction Order Stratification
-├── notebooks/                             # 5 Standalone Kaggle-ready Jupyter Notebooks
-├── docs/                                  # Research manuscript and fairness audit
+│   ├── exp_f_stratified_k/                # Exp F: Interaction Order Stratification
+│   └── exp_g_message_passing_hops/        # Exp G: Message-Passing Depth Ablation
+├── demo/                                  # Interactive polypharmacy CLI demo & weights
+├── results/                               # 7-Seed benchmark results master & charts
+├── docs/                                  # Research manuscript and blueprints
+├── archive/                               # Archived legacy prototypes and drafts
 └── README.md                              # Complete setup, reproduction, and benchmark guide
 ```
 

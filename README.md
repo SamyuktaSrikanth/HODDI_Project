@@ -193,6 +193,7 @@ print(results_df[['Rank', 'Side Effect Name', 'Probability', 'Risk Tier', 'Culpr
 ```text
 HODDI_Project/
 ├── README.md                                  # Unified master documentation
+├── AGENTS.md                                  # Research & benchmark enforcement guidelines
 ├── requirements.txt                           # Project dependencies
 ├── .gitignore                                 # Git rules (ignoring checkpoints, data, papers)
 │
@@ -201,23 +202,35 @@ HODDI_Project/
 │   ├── drug_bio_features_harmonized.pt        # Harmonized 1,024d biological feature tensor
 │   └── drug_bio_features_1162d.pt             # Extended biological feature tensor
 │
-├── notebooks/                                 # Self-contained Kaggle/Colab GPU notebooks
-│   ├── 01_kaggle_exp_b_no_se.ipynb            # Exp B: HyperAttDDI without SE features
-│   ├── 02_kaggle_exp_c_with_se.ipynb          # Exp C: HyperAttDDI + SE conditioning
-│   ├── 03_kaggle_exp_d_multimodal_bio.ipynb   # Exp D: Multimodal biological feature fusion
-│   ├── 04_kaggle_exp_e_mean_pool_ablation.ipynb # Exp E: Mean pooling ablation study
-│   ├── 05_kaggle_exp_f_stratified_eval.ipynb  # Exp F: Stratified evaluation across k=2..8
-│   ├── 06_kaggle_exp_g_message_passing_hops.ipynb # Exp G: Message passing hop analysis
-│   ├── 07_kaggle_exp_a_hgnn_sa_baseline.ipynb # Exp A: HGNN-SA baseline reproduction
-│   ├── kaggle_master_eval_exp_c.ipynb         # 7-Seed statistical significance eval for Exp C
-│   ├── kaggle_master_eval_exp_d.ipynb         # 7-Seed statistical significance eval for Exp D
-│   ├── kaggle_master_evaluation.ipynb         # Master comparative evaluation suite
-│   ├── kaggle_exp_c_full_screening.ipynb      # Point-of-care 7,350 MedDRA screening engine
-│   └── exp_d.ipynb                            # Exp D standalone execution
+├── demo/                                      # Interactive inference & pre-trained model weights
+│   ├── demo_inference.py                      # Multi-drug polypharmacy CLI screening engine
+│   ├── kaggle_train_and_save_weights.py       # Standalone training script to produce weights
+│   └── best_model_seed3407/                   # PyTorch checkpoint & feature metadata
 │
-├── results/                                   # Final publication artifacts
+├── experiments/                               # Self-contained experimental suites (A through G)
+│   ├── exp_a_baseline_hgnn/                   # Exp A: HGNN-SA baseline reproduction (7 seeds)
+│   │   └── kaggle_master_evaluation.ipynb
+│   ├── exp_b_hyperattddi_base/                # Exp B: HyperAttDDI base model (7 seeds)
+│   │   └── kaggle_master_evaluation.ipynb
+│   ├── exp_c_hyperattddi_se/                  # Exp C: HyperAttDDI-SE core model + 7,350 MedDRA screening
+│   │   └── kaggle_exp_c_full_screening.ipynb
+│   ├── exp_d_hyperattddi_bio/                 # Exp D: Multimodal biological feature fusion
+│   │   ├── kaggle_exp_d_7seeds.ipynb
+│   │   └── 03_kaggle_exp_d_multimodal_bio.ipynb
+│   ├── exp_e_mean_pool_ablation/              # Exp E: Mean vs attention pooling ablation study
+│   │   └── 04_kaggle_exp_e_mean_pool_ablation.ipynb
+│   ├── exp_f_stratified_k/                    # Exp F: Stratified evaluation across k = 2..8 drugs
+│   │   └── 05_kaggle_exp_f_stratified_eval.ipynb
+│   └── exp_g_message_passing_hops/            # Exp G: Hypergraph message-passing depth (L = 1..4)
+│       ├── kaggle_exp_g.ipynb
+│       ├── kaggle_exp_g.py
+│       └── run_exp_g.py
+│
+├── results/                                   # Final publication artifacts & evaluation metrics
 │   ├── results.pdf                            # 4-page executive 7-seed results master
-│   └── FINAL_CONSOLIDATED_RESULTS.md          # Unified Single Source of Truth metrics table
+│   ├── FINAL_CONSOLIDATED_RESULTS.md          # Unified Single Source of Truth metrics table
+│   ├── charts/                                # Publication-grade comparison charts & plots
+│   └── scripts/                               # Significance testing & chart plotting scripts
 │
 ├── docs/                                      # Research reports & blueprints
 │   ├── HYPERATTDDI_FINAL_PROJECT_REPORT_BCE497J.docx # Complete final project report
@@ -226,11 +239,11 @@ HODDI_Project/
 │   ├── literature_survey_rubric.md            # Rubric criteria & evaluation alignment
 │   └── fairness_audit.md                      # Audit verifying parity with HGNN-SA
 │
-└── experiments/
-    └── exp_g_message_passing_hops/            # Hop ablation training scripts & metrics
-        ├── run_exp_g.py
-        ├── kaggle_exp_g.py
-        └── hop_comparison_metrics.csv
+└── archive/                                   # Legacy prototypes and early development drafts
+    ├── 01_kaggle_exp_b_no_se.ipynb
+    ├── 02_kaggle_exp_c_with_se.ipynb
+    ├── 07_kaggle_exp_a_hgnn_sa_baseline.ipynb
+    └── extract_attention_weights.py
 ```
 
 ---
@@ -245,19 +258,16 @@ pip install -r requirements.txt
 ```
 
 ### 2. Running on Kaggle GPU (Recommended)
-All notebooks in [`notebooks/`](notebooks/) are self-contained and pre-configured for **Kaggle T4 GPU**:
-1. Open Kaggle and click **New Notebook** (or upload from `notebooks/`).
+All notebooks in [`experiments/`](experiments/) are self-contained and pre-configured for **Kaggle T4 GPU**:
+1. Open Kaggle and click **New Notebook** (or upload from the corresponding `experiments/exp_*/` folder).
 2. Attach the HODDI dataset containing the quarterly CSVs and precomputed tensors.
 3. Select **Accelerator $\to$ GPU T4 x2**.
 4. Run all cells (~4–5 minutes per 100-epoch training).
 
-### 3. Local Execution
+### 3. Local CLI Inference
 ```bash
-# Run 7-Seed Statistical Significance Evaluation (Exp B vs Exp C)
-python notebooks/kaggle_master_eval_exp_c.py --epochs 100 --batch_size 64
-
-# Run Full-Spectrum Point-of-Care Adverse Event Screening
-python demo_inference.py
+# Run Full-Spectrum Point-of-Care Adverse Event Screening Demo
+python demo/demo_inference.py --drugs DB00758 DB14726 DB00945
 ```
 
 ---

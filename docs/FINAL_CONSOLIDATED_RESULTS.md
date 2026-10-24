@@ -150,9 +150,9 @@ Use this audit table to answer any panel question on where a specific number ori
 
 | Experiment / Metric Group | Originating File | Repository Location | Execution Environment |
 | :--- | :--- | :--- | :--- |
-| **Exp A vs Exp B (7 Seeds)** | `kaggle_master_evaluation.py` / `.ipynb` | `notebooks/kaggle_master_evaluation.py` | Kaggle T4 GPU |
-| **Exp C (7 Seeds)** | `kaggle_exp_c_full_screening.ipynb` | `notebooks/kaggle_exp_c_full_screening.ipynb` | Kaggle T4 GPU |
-| **Exp D (7 Seeds)** | `exp_d.ipynb` | `notebooks/exp_d.ipynb` | Kaggle T4 GPU |
-| **Exp C Screening & Dual-Threshold** | `README_EXP_C_COLLABORATORS.md` | `HODDI_Project/README_EXP_C_COLLABORATORS.md` | Kaggle T4 GPU |
-| **Exp D Standalone & Modality** | `03_kaggle_exp_d_multimodal_bio.ipynb` & screenshot logs | `notebooks/03_kaggle_exp_d_multimodal_bio.ipynb` | Kaggle T4 GPU |
+| **Exp A vs Exp B (7 Seeds)** | `kaggle_master_evaluation.ipynb` | `experiments/exp_b_hyperattddi_base/` | Kaggle T4 GPU |
+| **Exp C (7 Seeds)** | `kaggle_exp_c_full_screening.ipynb` | `experiments/exp_c_hyperattddi_se/` | Kaggle T4 GPU |
+| **Exp D (7 Seeds)** | `kaggle_exp_d_7seeds.ipynb` | `experiments/exp_d_hyperattddi_bio/` | Kaggle T4 GPU |
+| **Exp C Screening & Dual-Threshold** | `README.md` | `HODDI_Project/README.md` | Kaggle T4 GPU |
+| **Exp D Standalone & Modality** | `03_kaggle_exp_d_multimodal_bio.ipynb` & logs | `experiments/exp_d_hyperattddi_bio/` | Kaggle T4 GPU |
 | **Exp G (Hops 1 to 4)** | `hop_comparison_metrics.csv` | `experiments/exp_g_message_passing_hops/` | Kaggle T4 GPU |

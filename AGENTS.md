@@ -23,22 +23,24 @@ This document defines strict guidelines for any AI assistant when drafting, edit
 
 When writing paper text, methodology, comparative tables, or statistical analyses:
 * **DO NOT USE OR CITE:**
-  * `notebooks/01_kaggle_exp_b_no_se.ipynb` (early single-run prototype)
-  * `notebooks/02_kaggle_exp_c_with_se.ipynb` (early single-run prototype)
-  * `notebooks/07_kaggle_exp_a_hgnn_sa_baseline.ipynb` (early single-run prototype)
+  * `archive/01_kaggle_exp_b_no_se.ipynb` (early single-run prototype)
+  * `archive/02_kaggle_exp_c_with_se.ipynb` (early single-run prototype)
+  * `archive/07_kaggle_exp_a_hgnn_sa_baseline.ipynb` (early single-run prototype)
+  * Any scripts in `archive/`
   * Outdated single-split canonical metrics from early September.
 * These files represent preliminary development drafts and are completely superseded by the 7-seed statistical benchmarking suite.
 
 ---
 
-## 3. Active Production Notebooks to Reference
+## 3. Active Production Experiments to Reference
 
 When describing code reproduction, pipeline architecture, or specific ablations, reference ONLY:
-1. **Exp A vs. Exp B (7-Seed Evaluation):** [`notebooks/kaggle_master_evaluation.ipynb`](notebooks/kaggle_master_evaluation.ipynb)
-2. **Exp C (Core Model + 7,350 MedDRA Screening Engine):** [`notebooks/kaggle_exp_c_full_screening.ipynb`](notebooks/kaggle_exp_c_full_screening.ipynb)
-3. **Exp D (Multimodal Biological Fusion - 7 Seeds):** [`notebooks/exp_d.ipynb`](notebooks/exp_d.ipynb)
-4. **Exp D Modality Gating Weights ($\alpha_{smiles}$ vs. $\alpha_{bio}$):** [`notebooks/03_kaggle_exp_d_multimodal_bio.ipynb`](notebooks/03_kaggle_exp_d_multimodal_bio.ipynb)
-5. **Exp E (Attention Pooling vs. Mean Pooling):** [`notebooks/04_kaggle_exp_e_mean_pool_ablation.ipynb`](notebooks/04_kaggle_exp_e_mean_pool_ablation.ipynb)
-6. **Exp F (Stratified Evaluation $k \in [2, 8]$):** [`notebooks/05_kaggle_exp_f_stratified_eval.ipynb`](notebooks/05_kaggle_exp_f_stratified_eval.ipynb)
-7. **Exp G (Topological Message-Passing Hops $L=1..4$):** [`notebooks/06_kaggle_exp_g_message_passing_hops.ipynb`](notebooks/06_kaggle_exp_g_message_passing_hops.ipynb)
-8. **Interactive CLI Inference:** [`demo/demo_inference.py`](demo/demo_inference.py)
+1. **Exp A (7-Seed Baseline Evaluation):** [`experiments/exp_a_baseline_hgnn/kaggle_master_evaluation.ipynb`](experiments/exp_a_baseline_hgnn/kaggle_master_evaluation.ipynb)
+2. **Exp B (7-Seed Base Model Evaluation):** [`experiments/exp_b_hyperattddi_base/kaggle_master_evaluation.ipynb`](experiments/exp_b_hyperattddi_base/kaggle_master_evaluation.ipynb)
+3. **Exp C (Core Model + 7,350 MedDRA Screening Engine):** [`experiments/exp_c_hyperattddi_se/kaggle_exp_c_full_screening.ipynb`](experiments/exp_c_hyperattddi_se/kaggle_exp_c_full_screening.ipynb)
+4. **Exp D (Multimodal Biological Fusion - 7 Seeds):** [`experiments/exp_d_hyperattddi_bio/kaggle_exp_d_7seeds.ipynb`](experiments/exp_d_hyperattddi_bio/kaggle_exp_d_7seeds.ipynb)
+5. **Exp D Modality Gating Weights ($\alpha_{smiles}$ vs. $\alpha_{bio}$):** [`experiments/exp_d_hyperattddi_bio/03_kaggle_exp_d_multimodal_bio.ipynb`](experiments/exp_d_hyperattddi_bio/03_kaggle_exp_d_multimodal_bio.ipynb)
+6. **Exp E (Attention Pooling vs. Mean Pooling):** [`experiments/exp_e_mean_pool_ablation/04_kaggle_exp_e_mean_pool_ablation.ipynb`](experiments/exp_e_mean_pool_ablation/04_kaggle_exp_e_mean_pool_ablation.ipynb)
+7. **Exp F (Stratified Evaluation $k \in [2, 8]$):** [`experiments/exp_f_stratified_k/05_kaggle_exp_f_stratified_eval.ipynb`](experiments/exp_f_stratified_k/05_kaggle_exp_f_stratified_eval.ipynb)
+8. **Exp G (Topological Message-Passing Hops $L=1..4$):** [`experiments/exp_g_message_passing_hops/kaggle_exp_g.ipynb`](experiments/exp_g_message_passing_hops/kaggle_exp_g.ipynb)
+9. **Interactive CLI Inference:** [`demo/demo_inference.py`](demo/demo_inference.py)
