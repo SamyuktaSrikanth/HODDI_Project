@@ -43,8 +43,9 @@ checkpoints/
 best_*.pt
 best_model_*/
 
-# Large binary document folders
+# Large binary datasets and document folders
 papers/
+data/
 
 # IDE & OS Specific
 .vscode/

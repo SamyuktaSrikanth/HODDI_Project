@@ -72,21 +72,7 @@ In clinical polypharmacy (concurrent administration of $2$ to $8$ medications), 
 
 ---
 
-## 3. Canonical 41-Quarter Single-Split Benchmark (Manuscript Reference)
-
-*Standardized 41-quarter chronological split (29 train, 6 validation, 6 test quarters; 70:15:15) with standard cross-entropy loss (as published in `HyperAttDDI_Manuscript.md` and `HyperDDI_Report_Exp_A_to_D.pdf`):*
-
-| Experiment | Model Architecture | Implementation Status | Input Modalities | Attention Pooling | Precision | Recall | F1 Score | ROC-AUC | PR-AUC |
-| :---: | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Literature** | HGNN-SA (Paper Baseline) | Wang et al. (2025) | SMILES only | None ($H^T X$) | 0.9060 | — | 0.9330 | 0.9570 | 0.9390 |
-| **Exp A** | HGNN-SA (Our Reproduction) | Reproduction from Scratch | SMILES only | None ($H^T X$) | 0.8571 | 0.9311 | 0.8926 | 0.9211 | 0.8760 |
-| **Exp B** | HyperAttDDI-Base (No SE) | Proposed Architecture | SMILES only | Generic Attention | 0.8384 | 0.9405 | 0.8865 | 0.9372 | 0.9175 |
-| **Exp C** | HyperAttDDI-SE (Core Model) | Proposed Core Innovation | SMILES + SapBERT | **SE-Conditioned** | 0.8724 | **0.9511** | 0.9101 | **0.9518** | **0.9285** |
-| **Exp D** | HyperAttDDI-Bio (Multimodal) | Proposed Multimodal | SMILES + Bio + SapBERT | **SE-Conditioned** | **0.8766** | 0.9469 | **0.9104** | 0.9505 | 0.9252 |
-
----
-
-## 4. Experiment C: Full-Spectrum Screening Engine & Dual-Threshold Results
+## 3. Experiment C: Full-Spectrum Screening Engine & Dual-Threshold Results
 
 * **Source File:** `README_EXP_C_COLLABORATORS.md` & `kaggle_exp_c_full_screening.ipynb`
 
@@ -115,7 +101,7 @@ In clinical polypharmacy (concurrent administration of $2$ to $8$ medications), 
 
 ---
 
-## 5. Experiment D: Multimodal KEGG Biological Attention Fusion (Standalone Checkpoint)
+## 4. Experiment D: Multimodal KEGG Biological Attention Fusion (Standalone Checkpoint)
 
 * **Source File:** `03_kaggle_exp_d_multimodal_bio.ipynb` & `attention_visualization_exp_d.csv`
 * **Training Convergence:** Best Validation F1 of **0.9305** achieved at **Epoch 81**.
@@ -142,7 +128,7 @@ Demonstrates learned dynamic weighting between ChemBERTa chemical structure (SMI
 
 ---
 
-## 6. Experiment G: Hypergraph Message-Passing Hops Ablation
+## 5. Experiment G: Hypergraph Message-Passing Hops Ablation
 
 * **Source File:** `hop_comparison_metrics.csv` & `experiments/exp_g_message_passing_hops/README.md`
 * **Commit Reference:** Git Commit `0833037` by SamyuktaSrikanth
@@ -158,16 +144,15 @@ Demonstrates learned dynamic weighting between ChemBERTa chemical structure (SMI
 
 ---
 
-## 7. Master Results Provenance & File Audit Table
+## 6. Master Results Provenance & File Audit Table
 
 Use this audit table to answer any panel question on where a specific number originated:
 
 | Experiment / Metric Group | Originating File | Repository Location | Execution Environment |
 | :--- | :--- | :--- | :--- |
 | **Exp A vs Exp B (7 Seeds)** | `kaggle_master_evaluation.py` / `.ipynb` | `notebooks/kaggle_master_evaluation.py` | Kaggle T4 GPU |
-| **Exp C (7 Seeds)** | `kaggle_exp_c_full_screening.ipynb` | Root directory | Kaggle T4 GPU |
-| **Exp D (7 Seeds)** | `exp_d.ipynb` | `HODDI_Project/exp_d.ipynb` | Kaggle T4 GPU |
-| **Canonical Benchmark (Exp A-D)** | `HyperDDI_Report_Exp_A_to_D.pdf` / `HyperAttDDI_Manuscript.md` | `HODDI_Project/docs/` | Kaggle T4 GPU |
+| **Exp C (7 Seeds)** | `kaggle_exp_c_full_screening.ipynb` | `notebooks/kaggle_exp_c_full_screening.ipynb` | Kaggle T4 GPU |
+| **Exp D (7 Seeds)** | `exp_d.ipynb` | `notebooks/exp_d.ipynb` | Kaggle T4 GPU |
 | **Exp C Screening & Dual-Threshold** | `README_EXP_C_COLLABORATORS.md` | `HODDI_Project/README_EXP_C_COLLABORATORS.md` | Kaggle T4 GPU |
 | **Exp D Standalone & Modality** | `03_kaggle_exp_d_multimodal_bio.ipynb` & screenshot logs | `notebooks/03_kaggle_exp_d_multimodal_bio.ipynb` | Kaggle T4 GPU |
 | **Exp G (Hops 1 to 4)** | `hop_comparison_metrics.csv` | `experiments/exp_g_message_passing_hops/` | Kaggle T4 GPU |
